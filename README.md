@@ -4,17 +4,9 @@
 
 A ready-to-run basic static application security testing (SAST) service: upload a source ZIP or provide a Git repository URL, run scans in the background, and retrieve results through a REST API, Web UI, or SARIF.
 
-- **Detection engines**: Uses [Semgrep](https://semgrep.dev/) first (semantic rules; 73 built-in rules covering Rust, C#, C/C++, and Node.js). If Semgrep is unavailable, it automatically falls back to the built-in regex engine so the service still works. Rust scans also include OSV dependency vulnerabilities and Cargo supply-chain checks.
-- **Asynchronous jobs**: Scans run in the background; the API returns `202` immediately and you can poll for status.
-- **Result storage**: SQLite stores scans and findings; workspaces are kept under `data/workspaces/<scan_id>`.
-- **Language and risk classification**: After each scan, project languages are detected (file count, line count, percentage), and findings and risk levels are aggregated by language.
-- **Standard output**: JSON findings and SARIF 2.1.0, ready for GitHub Code Scanning and similar tools.
-- **Agent integration**: Includes an MCP server (`sast_mcp/`) that lets agents such as OpenCode, Claude Code, and Claude Desktop scan, query, and export SARIF directly; a triage skill is also included.
-- **Security design**: Upload and extraction limits, zip-slip protection, symlink rejection, basic SSRF protection for Git URLs, and scanned code is never executed.
-
 ---
 
-## Quick start
+## Install
 
 ### Run locally
 
@@ -79,6 +71,18 @@ The install script generates `~/.config/systemd/user/sast.service` from the curr
 Use **either** systemd or Docker, not both. After installation, do not run `make run` manually.
 
 > Agent-driven setup is stricter: an agent must use Docker and must **not** install the systemd service. If Docker is unavailable, it should stop and ask you to install Docker instead. See [`AGENTS.md`](AGENTS.md).
+
+---
+
+## Features
+
+- **Detection engines**: Uses [Semgrep](https://semgrep.dev/) first (semantic rules; 73 built-in rules covering Rust, C#, C/C++, and Node.js). If Semgrep is unavailable, it automatically falls back to the built-in regex engine so the service still works. Rust scans also include OSV dependency vulnerabilities and Cargo supply-chain checks.
+- **Asynchronous jobs**: Scans run in the background; the API returns `202` immediately and you can poll for status.
+- **Result storage**: SQLite stores scans and findings; workspaces are kept under `data/workspaces/<scan_id>`.
+- **Language and risk classification**: After each scan, project languages are detected (file count, line count, percentage), and findings and risk levels are aggregated by language.
+- **Standard output**: JSON findings and SARIF 2.1.0, ready for GitHub Code Scanning and similar tools.
+- **Agent integration**: Includes an MCP server (`sast_mcp/`) that lets agents such as OpenCode, Claude Code, and Claude Desktop scan, query, and export SARIF directly; a triage skill is also included.
+- **Security design**: Upload and extraction limits, zip-slip protection, symlink rejection, basic SSRF protection for Git URLs, and scanned code is never executed.
 
 ---
 

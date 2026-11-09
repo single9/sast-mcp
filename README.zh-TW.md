@@ -4,17 +4,9 @@
 
 一個可直接執行的基本靜態應用程式安全測試（SAST）服務：上傳原始碼 ZIP 或提供 Git repo URL，背景執行掃描，並以 REST API、Web UI、SARIF 取得結果。
 
-- **偵測引擎**：優先使用 [Semgrep](https://semgrep.dev/)（語意規則，內建 73 條，含 Rust、C#、C/C++、Node.js），未安裝時自動退回內建 regex 引擎，服務仍可運作；Rust 另含 OSV 依賴漏洞與 Cargo 供應鏈檢查。
-- **非同步任務**：掃描在背景執行，API 立即回傳 `202`，可輪詢狀態。
-- **結果保存**：SQLite 儲存掃描與 findings，工作區保留於 `data/workspaces/<scan_id>`。
-- **語言與風險分類**：掃描後自動辨識專案語言（檔案數、行數、佔比），並依語言彙總 findings 與風險等級。
-- **標準輸出**：JSON findings 與 SARIF 2.1.0，可串接 GitHub Code Scanning 等工具。
-- **Agent 整合**：內建 MCP server（`sast_mcp/`），讓 OpenCode / Claude Code / Claude Desktop 等 Agent 直接掃描、查詢與輸出 SARIF；另附 triage Skill。
-- **安全設計**：上傳/解壓縮上限、zip slip 防護、符號連結拒絕、Git URL 的 SSRF 基本防護、不執行被掃描的程式碼。
-
 ---
 
-## 快速開始
+## 安裝
 
 ### 本機執行
 
@@ -79,6 +71,18 @@ make service-uninstall # 移除 service，保留 data/
 systemd 與 Docker 兩種方式**擇一使用**；安裝後不要再手動 `make run`。
 
 > Agent 自動安裝的規則更嚴格：Agent 必須使用 Docker，**不得**安裝 systemd 服務。若沒有 Docker，應停下來請你先安裝 Docker。詳見 [`AGENTS.md`](AGENTS.md)。
+
+---
+
+## 功能
+
+- **偵測引擎**：優先使用 [Semgrep](https://semgrep.dev/)（語意規則，內建 73 條，含 Rust、C#、C/C++、Node.js），未安裝時自動退回內建 regex 引擎，服務仍可運作；Rust 另含 OSV 依賴漏洞與 Cargo 供應鏈檢查。
+- **非同步任務**：掃描在背景執行，API 立即回傳 `202`，可輪詢狀態。
+- **結果保存**：SQLite 儲存掃描與 findings，工作區保留於 `data/workspaces/<scan_id>`。
+- **語言與風險分類**：掃描後自動辨識專案語言（檔案數、行數、佔比），並依語言彙總 findings 與風險等級。
+- **標準輸出**：JSON findings 與 SARIF 2.1.0，可串接 GitHub Code Scanning 等工具。
+- **Agent 整合**：內建 MCP server（`sast_mcp/`），讓 OpenCode / Claude Code / Claude Desktop 等 Agent 直接掃描、查詢與輸出 SARIF；另附 triage Skill。
+- **安全設計**：上傳/解壓縮上限、zip slip 防護、符號連結拒絕、Git URL 的 SSRF 基本防護、不執行被掃描的程式碼。
 
 ---
 
