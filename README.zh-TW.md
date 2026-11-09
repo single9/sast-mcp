@@ -6,6 +6,27 @@
 
 ---
 
+## 讓 Agent 自動安裝
+
+如果你要 AI Agent 自動 pull 這個 repo、啟動服務、註冊 MCP server 並安裝 triage Skill，把下面這段貼給 Agent：
+
+```text
+請從 https://github.com/single9/sast-mcp.git 安裝 SAST MCP 服務。
+
+1. Clone 到 ~/Development/sast；若已存在則 pull。
+2. 讀取 repo 內的 AGENTS.md，照「One-shot setup」章節執行。
+3. 如果有 Docker 和 Docker Compose，就用 Docker 啟動。若沒有 Docker，不要安裝或啟動
+   systemd 服務，也不要啟動其他常駐服務；停下來告訴我必須先安裝 Docker。
+4. 對我的客戶端全域註冊 `sast` MCP server、安裝 `sast-triage` Skill，並用 /health
+   與客戶端的 MCP list 驗證。
+5. 不要覆蓋既有設定；用合併方式加入 `sast` 項目。
+6. 回報 repo 路徑、服務 URL、MCP 註冊狀態與 Skill 路徑。
+```
+
+完整的 Agent 操作說明在 [`AGENTS.md`](AGENTS.md)，包含可重複執行的 clone/pull、host 依賴安裝、Agent 專用的 Docker-only 啟動規則、OpenCode / Claude Code / Claude Desktop 的 MCP 註冊、Skill 安裝、驗證與安全規則。
+
+---
+
 ## 安裝
 
 ### 本機執行
@@ -381,25 +402,6 @@ make install-skill
 ```
 
 這會把 `.opencode/skills/sast-triage/SKILL.md` 複製到 `~/.config/opencode/skills/`。要裝到其他位置，執行 `make install-skill SKILLS_DIR=/path/to/skills`。Skill 定義判讀流程（如何驗證、分類、修補、重掃），MCP 工具只提供動作。
-
-### 讓 Agent 自動安裝
-
-如果你要 AI Agent 自動 pull 這個 repo、啟動服務、註冊 MCP server 並安裝 triage Skill，把下面這段貼給 Agent：
-
-```text
-請從 https://github.com/single9/sast-mcp.git 安裝 SAST MCP 服務。
-
-1. Clone 到 ~/Development/sast；若已存在則 pull。
-2. 讀取 repo 內的 AGENTS.md，照「One-shot setup」章節執行。
-3. 如果有 Docker 和 Docker Compose，就用 Docker 啟動。若沒有 Docker，不要安裝或啟動
-   systemd 服務，也不要啟動其他常駐服務；停下來告訴我必須先安裝 Docker。
-4. 對我的客戶端全域註冊 `sast` MCP server、安裝 `sast-triage` Skill，並用 /health
-   與客戶端的 MCP list 驗證。
-5. 不要覆蓋既有設定；用合併方式加入 `sast` 項目。
-6. 回報 repo 路徑、服務 URL、MCP 註冊狀態與 Skill 路徑。
-```
-
-完整的 Agent 操作說明在 [`AGENTS.md`](AGENTS.md)，包含可重複執行的 clone/pull、host 依賴安裝、Agent 專用的 Docker-only 啟動規則、OpenCode / Claude Code / Claude Desktop 的 MCP 註冊、Skill 安裝、驗證與安全規則。
 
 ### 驗證安裝
 
