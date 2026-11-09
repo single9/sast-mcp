@@ -1,0 +1,182 @@
+rules:
+  # ===================== Rust =====================
+  # 內建規則刻意保持高訊號、低誤報；更完整的 Rust 規則集可用
+  # SAST_SEMGREP_EXTRA_CONFIGS=p/rust 疊加（需要網路）。
+  - id: rust-shell-command
+    languages: [rust]
+    severity: ERROR
+    message: 直接叫用 shell（sh/bash/cmd/powershell）執行指令；若參數含使用者輸入，可能造成命令注入。
+    metadata:
+      cwe: ["CWE-78: Improper Neutralization of Special Elements used in an OS Command"]
+      category: security
+      references: ["https://doc.rust-lang.org/std/process/struct.Command.html"]
+    patterns:
+      - pattern-either:
+          - pattern: std::process::Command::new($SHELL)
+          - pattern: Command::new($SHELL)
+      - metavariable-regex:
+          metavariable: $SHELL
+          regex: (?i)^"?(sh|bash|zsh|dash|cmd|cmd\.exe|powershell|powershell\.exe|pwsh|pwsh\.exe)"?$
+
+  - id: rust-insecure-tls
+    languages: [rust]
+    severity: ERROR
+    message: 停用 TLS 憑證或主機名稱驗證，可能遭受中間人攻擊。
+    metadata:
+      cwe: ["CWE-295: Improper Certificate Validation"]
+      category: security
+    pattern-either:
+      - pattern: $B.danger_accept_invalid_certs(true)
+      - pattern: $B.danger_accept_invalid_hostnames(true)
+
+  - id: rust-weak-hash
+    languages: [rust]
+    severity: WARNING
+    message: 使用 MD5/SHA-1 等已弱化的雜湊演算法；若用於密碼或簽章請改用 SHA-256 以上。
+    metadata:
+      cwe: ["CWE-327: Use of a Broken or Risky Cryptographic Algorithm"]
+      category: security
+    pattern-either:
+      - pattern: md5::compute(...)
+      - pattern: md5::Md5::new()
+      - pattern: Md5::new()
+      - pattern: sha1::Sha1::new()
+      - pattern: Sha1::new()
+
+  - id: rust-sql-format
+    languages: [rust]
+    severity: WARNING
+    message: 以 format! 拼接 SQL 字串；若插值含使用者輸入，可能造成 SQL injection。請改用參數化查詢。
+    metadata:
+      cwe: ["CWE-89: Improper Neutralization of Special Elements used in an SQL Command"]
+      category: security
+    patterns:
+      - pattern: format!($FMT, ...)
+      - metavariable-regex:
+          metavariable: $FMT
+          regex: (?i)^".*\b(select|insert|update|delete)\b.*"$
+
+  - id: rust-unsafe-block
+    languages: [rust]
+    severity: INFO
+    message: unsafe 區塊需人工確認記憶體安全與型別不變量；請確認沒有未驗證的長度、指標或外部輸入。
+    metadata:
+      cwe: ["CWE-758: Reliance on Undefined, Unspecified, or Implementation-Defined Behavior"]
+      category: security
+    pattern: unsafe { ... }
+
+  - id: rust-secret-logged
+    languages: [rust]
+    severity: WARNING
+    message: 把權杖、密碼或金鑰寫進日誌／標準輸出，可能經由 log 收集、終端紀錄或容器輸出外洩。
+    metadata:
+      cwe: ["CWE-532: Insertion of Sensitive Information into Log File"]
+      category: security
+    # Semgrep 的 Rust macro pattern 比對不到「方法呼叫」形式的參數，
+    # 因此這裡用 regex 直接比對日誌巨集的第一個字串常值。
+    pattern-regex: '(?is)\b(?:println|eprintln|print|tracing::(?:trace|debug|info|warn|error))!\s*\(\s*"(?:[^"\\]|\\.)*\b(?:token|secret|password|passwd|api[_-]?key|access[_-]?key)\b'
+
+  - id: rust-permissive-cors
+    languages: [rust]
+    severity: WARNING
+    message: CORS 允許任意來源／方法／標頭；若服務帶有認證或敏感資料，請改為明確白名單。
+    metadata:
+      cwe: ["CWE-942: Permissive Cross-domain Policy with Untrusted Domains"]
+      category: security
+    pattern-either:
+      - pattern: CorsLayer::permissive()
+      - pattern: tower_http::cors::CorsLayer::permissive()
+      - pattern: $LAYER.allow_origin(Any)
+      - pattern: $LAYER.allow_methods(Any)
+      - pattern: $LAYER.allow_headers(Any)
+
+  - id: rust-transmute
+    languages: [rust]
+    severity: ERROR
+    message: 使用 transmute 重新解釋記憶體；型別或長度不一致時會造成未定義行為。
+    metadata:
+      cwe: ["CWE-704: Incorrect Type Conversion or Cast"]
+      category: security
+    pattern-regex: '\b(?:std|core)::mem::transmute\b'
+
+  - id: rust-from-raw-parts
+    languages: [rust]
+    severity: ERROR
+    message: 從裸指標建立 slice；長度或生命週期錯誤會造成越界讀寫。
+    metadata:
+      cwe: ["CWE-119: Improper Restriction of Operations within the Bounds of a Memory Buffer"]
+      category: security
+    pattern-regex: '\b(?:std|core)::slice::from_raw_parts(?:_mut)?\s*\('
+
+  - id: rust-get-unchecked
+    languages: [rust]
+    severity: WARNING
+    message: 使用 get_unchecked 略過邊界檢查；索引錯誤會造成未定義行為。
+    metadata:
+      cwe: ["CWE-125: Out-of-bounds Read"]
+      category: security
+    pattern-regex: '\.get_unchecked(?:_mut)?\s*\('
+
+  - id: rust-unsafe-impl-send-sync
+    languages: [rust]
+    severity: WARNING
+    message: 手動宣告 Send/Sync 會繞過編譯器的執行緒安全檢查，需人工確認。
+    metadata:
+      cwe: ["CWE-758: Reliance on Undefined, Unspecified, or Implementation-Defined Behavior"]
+      category: security
+    pattern-regex: '\bunsafe\s+impl\s+(?:Send|Sync)\b'
+
+  - id: rust-ffi-extern
+    languages: [rust]
+    severity: INFO
+    message: FFI 邊界需確認 C 端記憶體配置、長度與空指標處理。
+    metadata:
+      cwe: ["CWE-758: Reliance on Undefined, Unspecified, or Implementation-Defined Behavior"]
+      category: security
+    pattern-regex: '\bextern\s+"C(?:-unwind)?"\s*\{'
+
+  - id: rust-path-traversal
+    languages: [rust]
+    severity: WARNING
+    message: 以使用者可控路徑開啟檔案可能造成路徑穿越；請驗證並限制在允許目錄內。
+    metadata:
+      cwe: ["CWE-22: Improper Limitation of a Pathname to a Restricted Directory"]
+      category: security
+    pattern-either:
+      - pattern: actix_files::NamedFile::open($PATH)
+      - pattern: NamedFile::open($PATH)
+
+  - id: rust-open-redirect
+    languages: [rust]
+    severity: INFO
+    message: 重新導向目標若來自使用者輸入，可能造成 open redirect。
+    metadata:
+      cwe: ["CWE-601: URL Redirection to Untrusted Site"]
+      category: security
+    pattern-either:
+      - pattern: Redirect::to($URL)
+      - pattern: Redirect::temporary($URL)
+      - pattern: Redirect::permanent($URL)
+
+  - id: rust-ssrf
+    languages: [rust]
+    severity: INFO
+    message: 以使用者可控 URL 發出請求可能造成 SSRF；請驗證目標主機與協定。
+    metadata:
+      cwe: ["CWE-918: Server-Side Request Forgery"]
+      category: security
+    pattern-either:
+      - pattern: reqwest::get($URL)
+
+  - id: rust-untrusted-deserialization
+    languages: [rust]
+    severity: INFO
+    message: 反序列化外部輸入需確認格式與大小限制，避免資源耗盡或型別混淆。
+    metadata:
+      cwe: ["CWE-502: Deserialization of Untrusted Data"]
+      category: security
+    pattern-either:
+      - pattern: serde_json::from_str($INPUT)
+      - pattern: serde_json::from_slice($INPUT)
+      - pattern: bincode::deserialize($INPUT)
+

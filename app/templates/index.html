@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}掃描列表 · SAST 掃描服務{% endblock %}
+{% block content %}
+<div class="hero">
+  <h1>程式碼安全掃描</h1>
+  <p>上傳原始碼 ZIP 或提供 Git repo，執行 SAST 並檢視 findings 與 SARIF 報告。</p>
+</div>
+
+{% if error %}<div class="alert">{{ error }}</div>{% endif %}
+
+<div class="grid">
+  <section class="card">
+    <h2>建立掃描</h2>
+    <form method="post" action="/ui/scans" enctype="multipart/form-data">
+      <label for="file">原始碼 ZIP</label>
+      <input id="file" type="file" name="file" accept=".zip,application/zip">
+      <p class="hint">不執行掃描目標的程式碼；僅上傳你信任且可分析的內容。</p>
+
+      <div class="divider">或</div>
+
+      <label for="repo_url">Git repo URL</label>
+      <input id="repo_url" type="url" name="repo_url" placeholder="https://github.com/owner/repo.git">
+      <p class="hint">僅支援 http(s)，會以 shallow clone 取得預設分支；內部網路位址會被拒絕。</p>
+
+      <button type="submit">開始掃描</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>偵測引擎</h2>
+    {% for engine in engines %}
+      <div class="engine">
+        <div>
+          <div class="name">
+            {{ engine.name }}
+            {% if engine.active %}<span class="badge ok">使用中</span>{% endif %}
+          </div>
+          <div class="meta">{{ engine.description }}</div>
+        </div>
+        <div class="meta">
+          {% if engine.available %}
+            <span class="badge ok">可用</span>
+          {% else %}
+            <span class="badge off">未安裝</span>
+          {% endif %}
+          {% if engine.version %}<div>{{ engine.version }}</div>{% endif %}
+        </div>
+      </div>
+    {% endfor %}
+    <p class="hint">安裝 Semgrep 後會自動使用語意引擎；否則使用內建 regex 規則。</p>
+  </section>
+</div>
+
+<section class="card" style="margin-top: 20px;">
+  <h2>最近的掃描 <span class="muted" style="font-weight: 400; font-size: 13px;">（共 {{ total }} 筆）</span></h2>
+  {% if scans %}
+  <table>
+    <thead>
+      <tr>
+        <th>掃描</th>
+        <th>來源</th>
+        <th>語言</th>
+        <th>狀態</th>
+        <th>Findings</th>
+        <th>建立時間</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for scan in scans %}
+      <tr>
+        <td><a class="mono" href="/ui/scans/{{ scan.id }}">{{ scan.id[:10] }}</a></td>
+        <td>
+          {% if scan.source_type == 'git' %}
+            <span class="mono">{{ (scan.source_ref or '')[:58] }}{% if scan.source_ref and scan.source_ref|length > 58 %}…{% endif %}</span>
+          {% else %}
+            <span class="mono">{{ scan.source_ref or 'zip' }}</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if scan.stats.get('primary_language_name') %}
+            <span class="badge off">{{ scan.stats.get('primary_language_name') }}</span>
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+        </td>
+        <td><span class="status status-{{ scan.status }}">{{ scan.status }}</span></td>
+        <td>
+          {% if scan.status == 'completed' %}
+            <span class="mono">{{ scan.stats.get('findings', 0) }}</span>
+            <span class="chips" style="margin-top: 4px;">
+              {% for sev in ['critical', 'high', 'medium', 'low'] %}
+                {% if scan.severity_counts.get(sev, 0) %}
+                  <span class="sev sev-{{ sev }}">{{ scan.severity_counts.get(sev) }} {{ sev }}</span>
+                {% endif %}
+              {% endfor %}
+            </span>
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+        </td>
+        <td class="muted">{{ scan.created_at[:19].replace('T', ' ') }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">還沒有掃描紀錄，從上方建立第一個掃描吧。</p>
+  {% endif %}
+</section>
+{% endblock %}

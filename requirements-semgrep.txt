@@ -1,0 +1,2 @@
+# 選用：安裝後 SAST_ENGINE=auto 會自動改用 Semgrep
+semgrep>=1.90

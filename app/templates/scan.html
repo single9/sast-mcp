@@ -1,0 +1,280 @@
+{% extends "base.html" %}
+{% block title %}掃描 {{ scan.id[:10] }} · SAST 掃描服務{% endblock %}
+{% block head %}
+  {% if scan.status in ['queued', 'running'] %}<meta http-equiv="refresh" content="3">{% endif %}
+{% endblock %}
+{% block content %}
+<div class="hero">
+  <h1>掃描結果</h1>
+  <p class="mono">{{ scan.id }}</p>
+</div>
+
+<div class="summary">
+  <div class="stat">
+    <div class="k">狀態</div>
+    <div class="v"><span class="status status-{{ scan.status }}">{{ scan.status }}</span></div>
+  </div>
+  <div class="stat">
+    <div class="k">Findings</div>
+    <div class="v">{{ scan.stats.get('findings', 0) if scan.status == 'completed' else '—' }}</div>
+  </div>
+  <div class="stat">
+    <div class="k">掃描檔案數</div>
+    <div class="v">{{ scan.stats.get('files_scanned', '—') if scan.status == 'completed' else '—' }}</div>
+  </div>
+  <div class="stat">
+    <div class="k">主要語言</div>
+    <div class="v">{{ language_stats.get('primary_language_name') or scan.stats.get('primary_language_name') or '—' }}</div>
+  </div>
+  <div class="stat">
+    <div class="k">耗時</div>
+    <div class="v">
+      {% if scan.stats.get('duration_ms') is not none %}{{ '%.1f'|format(scan.stats.get('duration_ms') / 1000) }}s{% else %}—{% endif %}
+    </div>
+  </div>
+</div>
+
+{% if scan.severity_counts %}
+<div class="chips" style="margin-bottom: 18px;">
+  {% for sev in severities %}
+    <span class="sev sev-{{ sev }}">{{ sev }} {{ scan.severity_counts.get(sev, 0) }}</span>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if scan.status == 'failed' %}
+  <div class="alert"><strong>掃描失敗：</strong>{{ scan.error }}</div>
+{% elif scan.status in ['queued', 'running'] %}
+  <div class="card"><p class="muted" style="margin: 0;">掃描進行中，頁面會自動更新…</p></div>
+{% endif %}
+
+<div class="card" style="margin-bottom: 20px;">
+  <table>
+    <tbody>
+      <tr><th style="width: 130px;">來源</th><td class="mono">{{ scan.source_ref }}</td></tr>
+      <tr><th>來源類型</th><td>{{ scan.source_type }}</td></tr>
+      <tr><th>引擎</th><td>{{ scan.engine or '—' }}{% if scan.stats.get('engine_version') %} <span class="muted">({{ scan.stats.get('engine_version') }})</span>{% endif %}</td></tr>
+      <tr><th>建立時間</th><td class="muted">{{ scan.created_at[:19].replace('T', ' ') }}</td></tr>
+      <tr><th>開始 / 結束</th><td class="muted">{{ (scan.started_at or '—')[:19].replace('T', ' ') }} / {{ (scan.finished_at or '—')[:19].replace('T', ' ') }}</td></tr>
+      {% if scan.stats.get('warnings') %}
+      <tr>
+        <th>警告</th>
+        <td class="muted">
+          <ul style="margin: 0; padding-left: 18px;">
+            {% for warning in scan.stats.get('warnings') %}<li>{{ warning }}</li>{% endfor %}
+          </ul>
+        </td>
+      </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+{% set lang_stats = language_stats or scan.stats.get('languages') or {} %}
+{% set lang_risk = language_risk or scan.stats.get('language_risk') or {} %}
+{% if lang_risk.get('languages') %}
+<section class="card" style="margin-bottom: 20px;">
+  <h2>
+    專案語言與風險
+    {% if lang_stats.get('primary_language_name') %}
+      <span class="muted" style="font-weight: 400; font-size: 13px;">主要語言：{{ lang_stats.get('primary_language_name') }}</span>
+    {% endif %}
+  </h2>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 180px;">語言</th>
+        <th>類別</th>
+        <th>檔案</th>
+        <th>行數</th>
+        <th>佔比</th>
+        <th>Findings</th>
+        <th>風險</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for lang in lang_risk.get('languages') %}
+      <tr>
+        <td>
+          <div class="lang-name">{{ lang.name }}</div>
+          <div class="lang-bar"><span style="width: {{ lang.percent }}%"></span></div>
+        </td>
+        <td class="muted">{{ lang.category_name }}</td>
+        <td class="mono">{{ '{:,}'.format(lang.files) }}</td>
+        <td class="mono">{{ '{:,}'.format(lang.lines) }}</td>
+        <td class="mono">{{ lang.percent }}%</td>
+        <td>
+          {% if lang.findings %}
+            <span class="mono">{{ lang.findings }}</span>
+            <div class="chips" style="margin-top: 4px;">
+              {% for sev in severities %}
+                {% if lang.severity_counts.get(sev, 0) %}
+                  <span class="sev sev-{{ sev }}">{{ lang.severity_counts.get(sev) }} {{ sev }}</span>
+                {% endif %}
+              {% endfor %}
+            </div>
+          {% else %}
+            <span class="muted">0</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if lang.risk_level == 'none' %}
+            <span class="sev sev-none">無</span>
+          {% else %}
+            <span class="sev sev-{{ lang.risk_level }}">{{ lang.risk_level }}</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="hint">
+    共辨識 {{ lang_stats.get('detected_languages', lang_risk.get('languages')|length) }} 種語言、
+    {{ '{:,}'.format(lang_stats.get('total_files', 0)) }} 個檔案；佔比以{{ '行數' if lang_stats.get('percent_basis', 'lines') == 'lines' else '檔案大小' }}計算。
+    風險等級取該語言最高 severity。
+  </p>
+</section>
+{% endif %}
+
+{% set dep_stats = scan.stats.get('dependencies') or {} %}
+{% set supply_stats = scan.stats.get('supply_chain') or {} %}
+{% if dep_stats.get('lockfiles') or supply_stats.get('manifests') or supply_stats.get('build_scripts') %}
+<section class="card" style="margin-bottom: 20px;">
+  <h2>依賴與供應鏈</h2>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 200px;">項目</th>
+        <th>數量 / 結果</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if dep_stats.get('enabled') %}
+      <tr><th>Cargo.lock 檔案</th><td class="mono">{{ dep_stats.get('lockfiles', 0) }}</td></tr>
+      <tr><th>查詢套件數（crates.io）</th><td class="mono">{{ dep_stats.get('packages', 0) }}</td></tr>
+      <tr>
+        <th>已知漏洞</th>
+        <td>
+          <span class="mono">{{ dep_stats.get('vulnerabilities', 0) }}</span>
+          <span class="muted">（受影響套件 {{ dep_stats.get('vulnerable_packages', 0) }} 個）</span>
+          {% if dep_stats.get('by_severity') %}
+            <div class="chips" style="margin-top: 4px;">
+              {% for sev in severities %}
+                {% if dep_stats.get('by_severity', {}).get(sev, 0) %}
+                  <span class="sev sev-{{ sev }}">{{ dep_stats.get('by_severity', {}).get(sev) }} {{ sev }}</span>
+                {% endif %}
+              {% endfor %}
+            </div>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><th>OSV 依賴掃描</th><td class="muted">未啟用</td></tr>
+      {% endif %}
+      {% if supply_stats.get('enabled') %}
+      <tr><th>Cargo.toml</th><td class="mono">{{ supply_stats.get('manifests', 0) }}</td></tr>
+      <tr><th>build.rs</th><td class="mono">{{ supply_stats.get('build_scripts', 0) }}</td></tr>
+      <tr><th>.cargo 設定</th><td class="mono">{{ supply_stats.get('cargo_configs', 0) }}</td></tr>
+      <tr><th>供應鏈 findings</th><td class="mono">{{ supply_stats.get('findings', 0) }}</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+  {% if dep_stats.get('error') %}
+    <p class="hint">OSV 查詢失敗：{{ dep_stats.get('error') }}</p>
+  {% endif %}
+  <p class="hint">
+    依賴漏洞來自 OSV（crates.io）；供應鏈檢查涵蓋 build.rs、registry 覆寫、git 依賴 pin、萬用版本與 Cargo patch。
+  </p>
+</section>
+{% endif %}
+
+<div class="actions">
+  <a class="btn-secondary" href="/ui/scans/{{ scan.id }}/sarif">下載 SARIF</a>
+  <a class="btn-secondary" href="/api/v1/scans/{{ scan.id }}/findings">Findings JSON</a>
+  <form method="post" action="/ui/scans/{{ scan.id }}/delete" onsubmit="return confirm('確定刪除這筆掃描與工作區？');" style="margin: 0;">
+    <button type="submit" class="btn-secondary btn-danger" style="margin: 0;">刪除掃描</button>
+  </form>
+</div>
+
+<section class="card">
+  <h2>
+    Findings
+    {% if suppressed_count %}
+      <span class="muted" style="font-weight: 400; font-size: 13px;">（已抑制 {{ suppressed_count }} 筆）</span>
+      {% if show_suppressed %}
+        <a class="btn-secondary" style="margin-left: 8px; padding: 3px 10px; font-size: 12px;" href="/ui/scans/{{ scan.id }}">隱藏已抑制</a>
+      {% else %}
+        <a class="btn-secondary" style="margin-left: 8px; padding: 3px 10px; font-size: 12px;" href="/ui/scans/{{ scan.id }}?show_suppressed=1">顯示已抑制</a>
+      {% endif %}
+    {% endif %}
+    {% if total_findings > findings|length %}
+      <span class="muted" style="font-weight: 400; font-size: 13px;">（顯示前 {{ findings|length }} / {{ total_findings }} 筆）</span>
+    {% endif %}
+  </h2>
+  {% if findings %}
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 130px;">Severity</th>
+        <th>規則 / 訊息</th>
+        <th style="width: 260px;">位置</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for finding in findings %}
+      <tr{% if finding.suppressed %} class="suppressed-row"{% endif %}>
+        <td>
+          <span class="sev sev-{{ finding.severity }}">{{ finding.severity }}</span>
+          {% if finding.suppressed %}
+            <span class="triage-badge{% if finding.triage_status == 'inline_ignored' %} inline{% endif %}">已抑制</span>
+          {% endif %}
+          {% if finding.regressed %}
+            <span class="triage-badge regressed">已修補後又出現</span>
+          {% endif %}
+        </td>
+        <td>
+          <p class="finding-msg">{{ finding.message }}</p>
+          <p class="finding-meta mono">{{ finding.rule_id }}{% if finding.cwe %} · {{ finding.cwe|join(', ') }}{% endif %}</p>
+          {% if finding.triage_status %}
+            <p class="finding-meta">
+              triage：{{ triage_labels.get(finding.triage_status, finding.triage_status) }}{% if finding.triage_note %} · {{ finding.triage_note }}{% endif %}
+            </p>
+          {% endif %}
+          {% if finding.snippet %}
+            <details><summary>程式碼片段</summary><pre class="snippet">{{ finding.snippet }}</pre></details>
+          {% endif %}
+          {% if finding.fingerprint %}
+          <details>
+            <summary>標記判定</summary>
+            <form method="post" action="/ui/scans/{{ scan.id }}/triage" class="triage-form">
+              <input type="hidden" name="fingerprint" value="{{ finding.fingerprint }}">
+              <input type="hidden" name="next" value="/ui/scans/{{ scan.id }}{% if show_suppressed %}?show_suppressed=1{% endif %}">
+              <select name="status">
+                <option value="">（清除紀錄）</option>
+                {% for status in triage_statuses %}
+                  <option value="{{ status }}"{% if finding.triage_status == status %} selected{% endif %}>{{ triage_labels.get(status, status) }}</option>
+                {% endfor %}
+              </select>
+              <input type="text" name="note" placeholder="原因（選填，會存進紀錄）" value="{{ finding.triage_note or '' }}" size="34">
+              <button type="submit">儲存</button>
+            </form>
+            {% if finding.triage_status == 'inline_ignored' %}
+              <p class="finding-meta">此筆來自原始碼的 <code>sast:ignore</code>；要恢復請移除該註解。</p>
+            {% endif %}
+          </details>
+          {% endif %}
+        </td>
+        <td class="mono">
+          {{ finding.file }}{% if finding.line %}:{{ finding.line }}{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% elif scan.status == 'completed' %}
+    <p class="empty">沒有發現問題 🎉</p>
+  {% else %}
+    <p class="empty">掃描完成後會在這裡顯示 findings。</p>
+  {% endif %}
+</section>
+{% endblock %}

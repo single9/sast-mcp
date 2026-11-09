@@ -1,0 +1,23 @@
+[Unit]
+Description=SAST scan service
+Documentation=file://@PROJECT_DIR@/README.md
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=@PROJECT_DIR@
+EnvironmentFile=-@PROJECT_DIR@/.env
+Environment=SAST_DATA_DIR=@PROJECT_DIR@/data
+Environment=SAST_SEMGREP_BIN=@PROJECT_DIR@/.venv/bin/semgrep
+Environment=PATH=@PROJECT_DIR@/.venv/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONUNBUFFERED=1
+ExecStart=@PYTHON@ -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=10
+KillSignal=SIGTERM
+UMask=0077
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

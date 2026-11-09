@@ -1,0 +1,73 @@
+rules:
+  # ===================== Node.js =====================
+  # 只放 Node/JS 生態系特有、且誤報相對可控的規則；
+  # eval / innerHTML / child_process.exec 等通用 JS 規則在 default.yml。
+  - id: node-vm-code-exec
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: 使用 vm 執行字串程式碼；若內容含使用者輸入，可能造成遠端程式碼執行。
+    metadata:
+      cwe: ["CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code"]
+      category: security
+    pattern-either:
+      - pattern: vm.runInNewContext(...)
+      - pattern: vm.runInThisContext(...)
+      - pattern: vm.runInContext(...)
+
+  - id: node-weak-hash
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: 使用 MD5/SHA-1 等已弱化的雜湊演算法；密碼請改用 bcrypt/argon2，完整性請用 SHA-256 以上。
+    metadata:
+      cwe: ["CWE-327: Use of a Broken or Risky Cryptographic Algorithm"]
+      category: security
+    pattern-either:
+      - pattern: crypto.createHash("md5")
+      - pattern: crypto.createHash("sha1")
+      - pattern: crypto.createHmac("md5", ...)
+      - pattern: crypto.createHmac("sha1", ...)
+
+  - id: node-insecure-tls
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: 停用 TLS 憑證驗證，可能遭受中間人攻擊。
+    metadata:
+      cwe: ["CWE-295: Improper Certificate Validation"]
+      category: security
+    pattern-regex: '(?i)\b(?:rejectUnauthorized\s*:\s*false|NODE_TLS_REJECT_UNAUTHORIZED\s*=\s*["'']?0)'
+
+  - id: node-spawn-shell
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: "spawn/execFile 使用 shell: true，若參數含使用者輸入可能造成命令注入。"
+    metadata:
+      cwe: ["CWE-78: Improper Neutralization of Special Elements used in an OS Command"]
+      category: security
+    pattern-regex: '(?is)\b(?:spawn|spawnSync|execFile|execFileSync)\s*\([^;]*\bshell\s*:\s*true'
+
+  - id: node-weak-cipher
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: 使用已淘汰或不安全的加密演算法（createCipher/DES/RC4），請改用 AES-GCM 等 AEAD。
+    metadata:
+      cwe: ["CWE-327"]
+      category: security
+    pattern-regex: '(?i)\bcreateCipher\s*\(|\bcreateCipheriv\s*\(\s*["''](?:des|des-ede3|rc4|rc2|bf)'
+
+  - id: node-jwt-none
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: JWT 允許 alg=none，攻擊者可自行偽造權杖。
+    metadata:
+      cwe: ["CWE-347: Improper Verification of Cryptographic Signature"]
+      category: security
+    pattern-regex: '(?is)algorithms\s*:\s*\[\s*["'']none["'']'
+
+  - id: node-sql-concat
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: SQL 語句以字串串接組成，可能造成 SQL injection；請改用參數化查詢。
+    metadata:
+      cwe: ["CWE-89: Improper Neutralization of Special Elements used in an SQL Command"]
+      category: security
+    pattern-regex: '(?i)\b(?:query|execute)\s*\(\s*["''][^"'']*["'']\s*\+'

@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}SAST 掃描服務{% endblock %}</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --surface: #ffffff;
+      --border: #e3e6ea;
+      --text: #1f2328;
+      --muted: #667085;
+      --accent: #1d4ed8;
+      --accent-soft: #e8efff;
+      --critical: #991b1b;
+      --critical-bg: #fee2e2;
+      --high: #b91c1c;
+      --high-bg: #ffe9e9;
+      --medium: #b45309;
+      --medium-bg: #fef3c7;
+      --low: #0e7490;
+      --low-bg: #e0f2fe;
+      --info: #475467;
+      --info-bg: #eef2f6;
+      --ok: #047857;
+      --ok-bg: #d1fae5;
+      --fail: #b42318;
+      --fail-bg: #fee4e2;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Noto Sans TC", sans-serif;
+      line-height: 1.55;
+      font-size: 15px;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+    header .wrap { display: flex; align-items: center; justify-content: space-between; height: 60px; }
+    .brand { font-weight: 700; font-size: 17px; color: var(--text); }
+    .brand span { color: var(--accent); }
+    nav a { margin-left: 18px; color: var(--muted); font-size: 14px; }
+    main.wrap { padding: 32px 24px 64px; }
+    .hero { margin-bottom: 24px; }
+    .hero h1 { margin: 0 0 8px; font-size: 26px; letter-spacing: -0.02em; }
+    .hero p { margin: 0; color: var(--muted); }
+    .grid { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 20px; align-items: start; }
+    @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 1px 2px rgba(16, 24, 40, 0.03);
+    }
+    .card h2 { margin: 0 0 14px; font-size: 16px; }
+    label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 6px; color: var(--muted); }
+    input[type="file"], input[type="url"] {
+      width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px;
+      background: #fbfcfd; font: inherit; font-size: 14px;
+    }
+    input[type="url"]:focus, input[type="file"]:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+    button {
+      margin-top: 16px; padding: 9px 16px; border: 0; border-radius: 8px;
+      background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+    }
+    button:hover { background: #1741b6; }
+    .hint { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+    .divider { display: flex; align-items: center; gap: 10px; margin: 18px 0 4px; color: var(--muted); font-size: 12px; }
+    .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+    .alert { background: var(--fail-bg); color: var(--fail); border: 1px solid #fecdca; border-radius: 8px; padding: 10px 12px; font-size: 14px; margin-bottom: 16px; }
+    .engine { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px dashed var(--border); font-size: 13.5px; }
+    .engine:last-child { border-bottom: 0; padding-bottom: 0; }
+    .engine .name { font-weight: 600; }
+    .engine .meta { color: var(--muted); font-size: 12px; }
+    .badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600;
+      white-space: nowrap;
+    }
+    .badge.ok { color: var(--ok); background: var(--ok-bg); }
+    .badge.off { color: var(--muted); background: var(--info-bg); }
+    .sev { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em; }
+    .sev-critical { color: var(--critical); background: var(--critical-bg); }
+    .sev-high { color: var(--high); background: var(--high-bg); }
+    .sev-medium { color: var(--medium); background: var(--medium-bg); }
+    .sev-low { color: var(--low); background: var(--low-bg); }
+    .sev-info { color: var(--info); background: var(--info-bg); }
+    .sev-none { color: var(--ok); background: var(--ok-bg); }
+    .status { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+    .status-queued { color: #475467; background: #eef2f6; }
+    .status-running { color: #1d4ed8; background: #e8efff; }
+    .status-completed { color: var(--ok); background: var(--ok-bg); }
+    .status-failed { color: var(--fail); background: var(--fail-bg); }
+    table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+    th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .03em; font-weight: 600; }
+    tbody tr:hover { background: #fafbfc; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
+    .muted { color: var(--muted); }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 20px; }
+    @media (max-width: 860px) { .summary { grid-template-columns: repeat(3, 1fr); } }
+    @media (max-width: 720px) { .summary { grid-template-columns: repeat(2, 1fr); } }
+    .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 13px 15px; }
+    .stat .k { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+    .stat .v { font-size: 19px; font-weight: 700; margin-top: 2px; word-break: break-word; }
+    .lang-name { font-weight: 600; }
+    .lang-bar { height: 5px; margin-top: 5px; border-radius: 999px; background: var(--info-bg); overflow: hidden; }
+    .lang-bar span { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+    .finding-msg { margin: 0; }
+    .finding-meta { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+    .triage-badge {
+      display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px;
+      font-size: 11px; font-weight: 600; background: #eef2ff; color: #4338ca;
+    }
+    .triage-badge.inline { background: #f1f5f9; color: #475569; }
+    .triage-badge.regressed { background: var(--fail-bg); color: var(--fail); }
+    tr.suppressed-row { opacity: .62; }
+    .triage-form { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+    .triage-form select, .triage-form input[type=text] {
+      padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px;
+      font-size: 12.5px; background: var(--surface); color: var(--text);
+    }
+    .triage-form button {
+      padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border);
+      background: var(--surface); color: var(--text); font-size: 12.5px; cursor: pointer;
+    }
+    .triage-form button:hover { border-color: var(--accent); color: var(--accent); }
+    pre.snippet {
+      margin: 7px 0 0; padding: 8px 10px; background: #0f172a; color: #e2e8f0;
+      border-radius: 6px; overflow-x: auto; font-size: 12px; line-height: 1.5;
+    }
+    details summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
+    .actions { display: flex; gap: 12px; flex-wrap: wrap; margin: 18px 0; }
+    .btn-secondary {
+      display: inline-block; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--surface); color: var(--text); font-size: 13.5px; font-weight: 600;
+    }
+    .btn-secondary:hover { text-decoration: none; border-color: var(--accent); color: var(--accent); }
+    .btn-danger { border-color: #fecdca; color: var(--fail); }
+    .btn-danger:hover { border-color: var(--fail); color: var(--fail); }
+    footer { border-top: 1px solid var(--border); margin-top: 40px; padding: 20px 0; color: var(--muted); font-size: 12.5px; }
+    .empty { color: var(--muted); text-align: center; padding: 26px 10px; font-size: 13.5px; }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <a class="brand" href="/">SAST <span>掃描服務</span></a>
+      <nav>
+        <a href="/">掃描列表</a>
+        <a href="/docs">API 文件</a>
+        <a href="/health">健康檢查</a>
+      </nav>
+    </div>
+  </header>
+  <main class="wrap">
+    {% block content %}{% endblock %}
+  </main>
+  <footer>
+    <div class="wrap">SAST Service · findings 為靜態分析結果，仍需人工確認 · <a href="/api/v1/scans">REST API</a></div>
+  </footer>
+</body>
+</html>

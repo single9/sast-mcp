@@ -1,0 +1,318 @@
+rules:
+  # ===================== Python =====================
+  - id: python-eval
+    languages: [python]
+    severity: ERROR
+    message: 使用 eval() 執行動態字串，可能導致遠端程式碼執行。
+    metadata:
+      cwe: ["CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code"]
+      category: security
+    pattern: eval(...)
+
+  - id: python-exec
+    languages: [python]
+    severity: ERROR
+    message: 使用 exec() 執行動態程式碼，可能導致遠端程式碼執行。
+    metadata:
+      cwe: ["CWE-95"]
+      category: security
+    pattern: exec(...)
+
+  - id: python-os-system
+    languages: [python]
+    severity: ERROR
+    message: 使用 os.system / os.popen 執行 shell 指令，請改用參數化 API。
+    metadata:
+      cwe: ["CWE-78: Improper Neutralization of Special Elements used in an OS Command"]
+      category: security
+    pattern-either:
+      - pattern: os.system(...)
+      - pattern: os.popen(...)
+
+  - id: python-subprocess-shell
+    languages: [python]
+    severity: ERROR
+    message: subprocess 使用 shell=True，若指令含使用者輸入可能造成命令注入。
+    metadata:
+      cwe: ["CWE-78"]
+      category: security
+    patterns:
+      - pattern-either:
+          - pattern: subprocess.run(..., shell=True, ...)
+          - pattern: subprocess.call(..., shell=True, ...)
+          - pattern: subprocess.Popen(..., shell=True, ...)
+          - pattern: subprocess.check_output(..., shell=True, ...)
+          - pattern: subprocess.check_call(..., shell=True, ...)
+
+  - id: python-pickle
+    languages: [python]
+    severity: WARNING
+    message: 反序列化 pickle 資料可能導致程式碼執行，請改用安全格式。
+    metadata:
+      cwe: ["CWE-502: Deserialization of Untrusted Data"]
+      category: security
+    pattern-either:
+      - pattern: pickle.load(...)
+      - pattern: pickle.loads(...)
+
+  - id: python-yaml-load
+    languages: [python]
+    severity: WARNING
+    message: yaml.load() 若未指定 SafeLoader 可能導致程式碼執行。
+    metadata:
+      cwe: ["CWE-502"]
+      category: security
+    pattern: yaml.load(...)
+
+  - id: python-weak-hash
+    languages: [python]
+    severity: WARNING
+    message: 使用 MD5/SHA-1 等已弱化的雜湊演算法。
+    metadata:
+      cwe: ["CWE-327: Use of a Broken or Risky Cryptographic Algorithm"]
+      category: security
+    pattern-either:
+      - pattern: hashlib.md5(...)
+      - pattern: hashlib.sha1(...)
+
+  - id: python-sql-injection
+    languages: [python]
+    severity: ERROR
+    message: SQL 語句以字串拼接／格式化組成，可能造成 SQL injection。
+    metadata:
+      cwe: ["CWE-89: Improper Neutralization of Special Elements used in an SQL Command"]
+      category: security
+    patterns:
+      - pattern-either:
+          - pattern: $CUR.execute("..." + $X, ...)
+          - pattern: $CUR.execute("..." % $X, ...)
+          - pattern: $CUR.execute("...".format(...), ...)
+          - pattern: $CUR.executemany("..." + $X, ...)
+          - pattern: $CUR.executemany("..." % $X, ...)
+
+  - id: python-sql-fstring
+    languages: [python]
+    severity: ERROR
+    message: SQL 語句使用 f-string 插值，可能造成 SQL injection。
+    metadata:
+      cwe: ["CWE-89"]
+      category: security
+    pattern-regex: '(?i)(?:execute|executemany)\s*\(\s*f["'']'
+
+  - id: python-flask-debug
+    languages: [python]
+    severity: WARNING
+    message: Flask 開啟 debug 模式，請勿在正式環境使用。
+    metadata:
+      cwe: ["CWE-489: Active Debug Code"]
+      category: security
+    pattern: $APP.run(..., debug=True, ...)
+
+  - id: python-verify-false
+    languages: [python]
+    severity: WARNING
+    message: 停用 TLS 憑證驗證，可能遭受中間人攻擊。
+    metadata:
+      cwe: ["CWE-295: Improper Certificate Validation"]
+      category: security
+    pattern: $REQ(..., verify=False, ...)
+
+  # ===================== JavaScript / TypeScript =====================
+  - id: js-eval
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: 使用 eval() 可能導致程式碼注入。
+    metadata:
+      cwe: ["CWE-95"]
+      category: security
+    pattern: eval(...)
+
+  - id: js-new-function
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: new Function() 會將字串當成程式碼執行。
+    metadata:
+      cwe: ["CWE-95"]
+      category: security
+    pattern: new Function(...)
+
+  - id: js-innerhtml
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: 直接指派 innerHTML 可能造成 XSS，請改用 textContent 或經過消毒。
+    metadata:
+      cwe: ["CWE-79: Improper Neutralization of Input During Web Page Generation"]
+      category: security
+    pattern: $EL.innerHTML = ...
+
+  - id: js-dangerously-set-inner-html
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: React 的 dangerouslySetInnerHTML 可能造成 XSS。
+    metadata:
+      cwe: ["CWE-79"]
+      category: security
+    pattern-regex: 'dangerouslySetInnerHTML'
+
+  - id: js-document-write
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: document.write 可能造成 DOM-based XSS。
+    metadata:
+      cwe: ["CWE-79"]
+      category: security
+    pattern-either:
+      - pattern: document.write(...)
+      - pattern: document.writeln(...)
+
+  - id: js-child-process-exec
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: child_process.exec 會透過 shell 執行指令，可能造成命令注入。
+    metadata:
+      cwe: ["CWE-78"]
+      category: security
+    pattern-either:
+      - pattern: require("child_process").exec(...)
+      - pattern: require("child_process").execSync(...)
+      - pattern: child_process.exec(...)
+      - pattern: child_process.execSync(...)
+
+  - id: js-sql-template
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: SQL 語句以樣板字串拼接，可能造成 SQL injection。
+    metadata:
+      cwe: ["CWE-89"]
+      category: security
+    pattern-regex: '(?i)(?:query|execute)\s*\(\s*`[^`]*\$\{'
+
+  # ===================== Java =====================
+  - id: java-runtime-exec
+    languages: [java]
+    severity: ERROR
+    message: Runtime.exec 可能造成命令注入。
+    metadata:
+      cwe: ["CWE-78"]
+      category: security
+    pattern: Runtime.getRuntime().exec(...)
+
+  - id: java-sql-concat
+    languages: [java]
+    severity: ERROR
+    message: 以字串串接組 SQL，可能造成 SQL injection。
+    metadata:
+      cwe: ["CWE-89"]
+      category: security
+    pattern-either:
+      - pattern: $ST.executeQuery("..." + $X)
+      - pattern: $ST.executeUpdate("..." + $X)
+      - pattern: $ST.execute("..." + $X)
+
+  - id: java-weak-hash
+    languages: [java]
+    severity: WARNING
+    message: 使用 MD5/SHA-1 等已弱化的雜湊演算法。
+    metadata:
+      cwe: ["CWE-327"]
+      category: security
+    pattern-either:
+      - pattern: MessageDigest.getInstance("MD5")
+      - pattern: MessageDigest.getInstance("SHA-1")
+      - pattern: MessageDigest.getInstance("SHA1")
+
+  # ===================== Go =====================
+  - id: go-exec-command
+    languages: [go]
+    severity: WARNING
+    message: exec.Command 若帶入未驗證的使用者輸入，可能造成命令注入。
+    metadata:
+      cwe: ["CWE-78"]
+      category: security
+    pattern-either:
+      - pattern: exec.Command(...)
+      - pattern: exec.CommandContext(...)
+
+  # ===================== PHP =====================
+  - id: php-code-exec
+    languages: [php]
+    severity: ERROR
+    message: 動態執行程式碼可能導致遠端程式碼執行。
+    metadata:
+      cwe: ["CWE-95"]
+      category: security
+    pattern-regex: '(?i)\b(?:eval|assert)\s*\('
+
+  - id: php-shell-exec
+    languages: [php]
+    severity: ERROR
+    message: 執行 shell 指令可能造成命令注入。
+    metadata:
+      cwe: ["CWE-78"]
+      category: security
+    pattern-regex: '(?i)\b(?:system|shell_exec|passthru|exec|popen|proc_open)\s*\('
+
+  # ===================== Ruby =====================
+  - id: ruby-code-exec
+    languages: [ruby]
+    severity: WARNING
+    message: 動態執行程式碼可能導致程式碼注入。
+    metadata:
+      cwe: ["CWE-95"]
+      category: security
+    pattern-regex: '(?i)\b(?:eval|instance_eval|class_eval|send)\s*\('
+
+  # ===================== 跨語言：機密資訊 =====================
+  - id: generic-private-key
+    languages: [generic]
+    severity: ERROR
+    message: 原始碼中出現私密金鑰。
+    metadata:
+      cwe: ["CWE-798: Use of Hard-coded Credentials", "CWE-321"]
+      category: security
+    pattern-regex: '-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----'
+
+  - id: generic-aws-access-key
+    languages: [generic]
+    severity: ERROR
+    message: 原始碼中出現疑似 AWS Access Key ID。
+    metadata:
+      cwe: ["CWE-798"]
+      category: security
+    pattern-regex: '\bAKIA[0-9A-Z]{16}\b'
+
+  - id: generic-google-api-key
+    languages: [generic]
+    severity: ERROR
+    message: 原始碼中出現疑似 Google API Key。
+    metadata:
+      cwe: ["CWE-798"]
+      category: security
+    pattern-regex: '\bAIza[0-9A-Za-z\-_]{35}\b'
+
+  - id: generic-slack-token
+    languages: [generic]
+    severity: ERROR
+    message: 原始碼中出現疑似 Slack token。
+    metadata:
+      cwe: ["CWE-798"]
+      category: security
+    pattern-regex: '\bxox[baprs]-[0-9A-Za-z\-]{10,}\b'
+
+  - id: generic-url-credentials
+    languages: [generic]
+    severity: ERROR
+    message: URL 中直接內嵌帳號密碼。
+    metadata:
+      cwe: ["CWE-798", "CWE-522"]
+      category: security
+    pattern-regex: 'https?://[^/\s:@]+:[^/\s@]+@'
+
+  - id: generic-hardcoded-secret
+    languages: [generic]
+    severity: WARNING
+    message: 疑似硬編碼的密碼／金鑰，請改用環境變數或密鑰管理服務。
+    metadata:
+      cwe: ["CWE-798"]
+      category: security
+    pattern-regex: '(?i)\b(?:api[_-]?key|apikey|secret(?:[_-]?key)?|password|passwd|pwd|access[_-]?token|auth[_-]?token)\b\s*[:=]\s*["''][^"''\n]{8,}["'']'

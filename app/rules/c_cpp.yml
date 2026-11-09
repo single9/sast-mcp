@@ -1,0 +1,103 @@
+rules:
+  # ===================== C / C++ =====================
+  # 以記憶體安全與命令執行為主；需要完整資料流分析時仍應搭配 clang-tidy / CodeQL。
+  - id: cpp-gets
+    languages: [c, cpp]
+    severity: ERROR
+    message: gets() 不檢查緩衝區長度，已被移除；請改用 fgets()。
+    metadata:
+      cwe: ["CWE-242: Use of Inherently Dangerous Function"]
+      category: security
+    pattern: gets(...)
+
+  - id: cpp-unsafe-string-functions
+    languages: [c, cpp]
+    severity: WARNING
+    message: strcpy/strcat/sprintf 不檢查目的緩衝區長度，可能造成溢位；請改用 strncpy/strncat/snprintf。
+    metadata:
+      cwe: ["CWE-120: Buffer Copy without Checking Size of Input"]
+      category: security
+    pattern-either:
+      - pattern: strcpy(...)
+      - pattern: strcat(...)
+      - pattern: sprintf(...)
+      - pattern: vsprintf(...)
+
+  - id: cpp-command-exec
+    languages: [c, cpp]
+    severity: ERROR
+    message: system/popen 會透過 shell 執行指令，若含使用者輸入可能造成命令注入。
+    metadata:
+      cwe: ["CWE-78"]
+      category: security
+    pattern-either:
+      - pattern: system(...)
+      - pattern: popen(...)
+
+  - id: cpp-format-string
+    languages: [c, cpp]
+    severity: ERROR
+    message: printf 的第一個參數不是字串常值，若含使用者輸入可能造成格式字串攻擊。
+    metadata:
+      cwe: ["CWE-134: Use of Externally-Controlled Format String"]
+      category: security
+    patterns:
+      - pattern: printf($FMT, ...)
+      - metavariable-pattern:
+          metavariable: $FMT
+          patterns:
+            - pattern-not: '"..."'
+
+  - id: cpp-weak-crypto
+    languages: [c, cpp]
+    severity: WARNING
+    message: 使用 MD5/SHA-1 等已弱化的雜湊演算法。
+    metadata:
+      cwe: ["CWE-327"]
+      category: security
+    pattern-either:
+      - pattern: MD5_Init(...)
+      - pattern: SHA1_Init(...)
+      - pattern: EVP_md5()
+      - pattern: EVP_sha1()
+      - pattern: MD5(...)
+      - pattern: SHA1(...)
+
+  - id: cpp-insecure-temp
+    languages: [c, cpp]
+    severity: WARNING
+    message: tmpnam/mktemp 產生可預測的暫存檔名，可能導致符號連結攻擊或檔案覆寫。
+    metadata:
+      cwe: ["CWE-377: Insecure Temporary File"]
+      category: security
+    pattern-either:
+      - pattern: tmpnam(...)
+      - pattern: tempnam(...)
+      - pattern: mktemp(...)
+
+  - id: cpp-permissive-file-mode
+    languages: [c, cpp]
+    severity: WARNING
+    message: 建立檔案時使用 0777 權限，任何使用者都可讀寫；請改用最小權限。
+    metadata:
+      cwe: ["CWE-732: Incorrect Permission Assignment for Critical Resource"]
+      category: security
+    pattern-regex: '(?i)\b(?:chmod|open|creat)\s*\([^;\n]*\b0?777\b'
+
+  - id: cpp-unsafe-scanf
+    languages: [c, cpp]
+    severity: WARNING
+    message: scanf 使用 %s 沒有長度限制，可能造成緩衝區溢位；請改用 %Ns 或 fgets。
+    metadata:
+      cwe: ["CWE-120"]
+      category: security
+    pattern-regex: '(?i)\b(?:scanf|fscanf|sscanf)\s*\([^;\n]*%s'
+
+  - id: cpp-exec-family
+    languages: [c, cpp]
+    severity: WARNING
+    message: 使用 exec 系列函式執行外部程式；請確認參數不含未驗證的使用者輸入。
+    metadata:
+      cwe: ["CWE-78"]
+      category: security
+    pattern-regex: '(?i)\bexec(?:l|le|lp|v|ve|vp|vpe)\s*\('

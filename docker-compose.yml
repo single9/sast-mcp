@@ -1,0 +1,35 @@
+services:
+  sast:
+    build:
+      context: .
+      args:
+        INSTALL_SEMGREP: "true"
+    image: sast-service:local
+    container_name: sast
+    # 只綁 loopback，不直接對外開放
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      SAST_DATA_DIR: /data
+      SAST_ENGINE: auto
+      # 疊加額外規則集（逗號分隔）。p/rust 需要容器能連外抓 registry pack；
+      # 下載失敗時服務會自動退回內建規則並在 scan warnings 留下訊息。
+      # 設成空字串可停用：SAST_SEMGREP_EXTRA_CONFIGS= docker compose up -d
+      SAST_SEMGREP_EXTRA_CONFIGS: ${SAST_SEMGREP_EXTRA_CONFIGS-p/rust}
+      SAST_API_KEY: ${SAST_API_KEY:-}
+      SAST_MAX_UPLOAD_MB: ${SAST_MAX_UPLOAD_MB:-50}
+      SAST_MAX_EXTRACT_MB: ${SAST_MAX_EXTRACT_MB:-200}
+      SAST_SCAN_TIMEOUT_SEC: ${SAST_SCAN_TIMEOUT_SEC:-300}
+      SAST_ALLOW_GIT_SOURCES: ${SAST_ALLOW_GIT_SOURCES:-true}
+      # 解析 Cargo.lock 並查詢 OSV（crates.io）；失敗只留 warning，不讓掃描失敗
+      SAST_OSV_ENABLED: ${SAST_OSV_ENABLED:-true}
+      SAST_OSV_API_URL: ${SAST_OSV_API_URL:-https://api.osv.dev}
+      SAST_OSV_TIMEOUT_SEC: ${SAST_OSV_TIMEOUT_SEC:-20}
+      SAST_OSV_MAX_PACKAGES: ${SAST_OSV_MAX_PACKAGES:-1000}
+      # build.rs、.cargo 設定、git 依賴 pin、萬用版本、Cargo patch
+      SAST_SUPPLY_CHAIN_ENABLED: ${SAST_SUPPLY_CHAIN_ENABLED:-true}
+    volumes:
+      # 沿用專案內既有資料（SQLite、掃描工作區）
+      - ./data:/data
+    init: true
+    restart: unless-stopped

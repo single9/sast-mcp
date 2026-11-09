@@ -1,0 +1,107 @@
+rules:
+  # ===================== C# / .NET =====================
+  # 涵蓋 ASP.NET / ADO.NET / .NET 常見的高風險 API。
+  - id: csharp-sql-injection
+    languages: [csharp]
+    severity: ERROR
+    message: SQL 語句以字串串接或插值組成，可能造成 SQL injection；請改用參數化查詢。
+    metadata:
+      cwe: ["CWE-89"]
+      category: security
+    pattern-regex: '(?is)\b(?:new\s+SqlCommand|CommandText\s*=)\s*\(?\s*(?:"(?:[^"\\]|\\.)*"\s*\+|\$"(?:[^"\\]|\\.)*\{|''(?:[^''\\]|\\.)*''\s*\+|string\.Format\s*\()'
+
+  - id: csharp-command-injection
+    languages: [csharp]
+    severity: WARNING
+    message: Process.Start 若帶入未驗證的使用者輸入，可能造成命令注入或任意程式執行。
+    metadata:
+      cwe: ["CWE-78"]
+      category: security
+    pattern-either:
+      - pattern: Process.Start(...)
+      - pattern: System.Diagnostics.Process.Start(...)
+
+  - id: csharp-binary-formatter
+    languages: [csharp]
+    severity: ERROR
+    message: BinaryFormatter 等格式反序列化不受信任資料可能導致遠端程式碼執行。
+    metadata:
+      cwe: ["CWE-502: Deserialization of Untrusted Data"]
+      category: security
+    pattern-either:
+      - pattern: new BinaryFormatter()
+      - pattern: new LosFormatter()
+      - pattern: new ObjectStateFormatter()
+      - pattern: new NetDataContractSerializer()
+      - pattern: new SoapFormatter()
+
+  - id: csharp-weak-hash
+    languages: [csharp]
+    severity: WARNING
+    message: 使用 MD5/SHA-1 等已弱化的雜湊演算法；密碼請改用 bcrypt/argon2/PBKDF2。
+    metadata:
+      cwe: ["CWE-327"]
+      category: security
+    pattern-either:
+      - pattern: MD5.Create()
+      - pattern: SHA1.Create()
+      - pattern: MD5.HashData(...)
+      - pattern: SHA1.HashData(...)
+      - pattern: new MD5CryptoServiceProvider()
+      - pattern: new SHA1CryptoServiceProvider()
+
+  - id: csharp-xxe
+    languages: [csharp]
+    severity: WARNING
+    message: 啟用 DTD 或外部 XML resolver 可能導致 XXE；請關閉 DtdProcessing 並避免 XmlUrlResolver。
+    metadata:
+      cwe: ["CWE-611: Improper Restriction of XML External Entity Reference"]
+      category: security
+    pattern-either:
+      - pattern: DtdProcessing.Parse
+      - pattern: XmlResolver = new XmlUrlResolver()
+
+  - id: csharp-request-validation-disabled
+    languages: [csharp]
+    severity: WARNING
+    message: 停用請求驗證會讓未過濾的輸入進入應用程式，請改用明確的白名單或編碼。
+    metadata:
+      cwe: ["CWE-79"]
+      category: security
+    pattern-regex: '(?i)\[?\s*ValidateInput\s*\(\s*false\s*\)'
+
+  - id: csharp-cors-allow-any
+    languages: [csharp]
+    severity: WARNING
+    message: CORS 允許任意來源；若 API 帶有認證或敏感資料，請改用明確白名單。
+    metadata:
+      cwe: ["CWE-942: Permissive Cross-domain Policy with Untrusted Domains"]
+      category: security
+    pattern-regex: '\bAllowAnyOrigin\s*\(\s*\)'
+
+  - id: csharp-insecure-cookie
+    languages: [csharp]
+    severity: WARNING
+    message: Cookie 未設定 Secure，可能經由明文 HTTP 傳輸而外洩。
+    metadata:
+      cwe: ["CWE-614: Sensitive Cookie in HTTPS Session Without 'Secure' Attribute"]
+      category: security
+    pattern-regex: '(?is)new\s+HttpCookie\s*\([^)]*\)\s*\{[^}]*\bSecure\s*=\s*false'
+
+  - id: csharp-ldap-injection
+    languages: [csharp]
+    severity: ERROR
+    message: LDAP filter 以字串串接或插值組成，可能造成 LDAP injection。
+    metadata:
+      cwe: ["CWE-90: Improper Neutralization of Special Elements used in an LDAP Query"]
+      category: security
+    pattern-regex: '(?is)(?:\bnew\s+DirectorySearcher\s*\(\s*|\.Filter\s*=\s*)(?:"(?:[^"\\]|\\.)*"\s*\+|\$"(?:[^"\\]|\\.)*\{)'
+
+  - id: csharp-connection-string-secret
+    languages: [csharp]
+    severity: WARNING
+    message: 連線字串直接內嵌密碼，請改用整合驗證或密鑰管理服務。
+    metadata:
+      cwe: ["CWE-798: Use of Hard-coded Credentials"]
+      category: security
+    pattern-regex: '(?i)\b(?:Password|Pwd)\s*=\s*[^;"''\s]{6,}'
