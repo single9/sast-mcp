@@ -78,6 +78,8 @@ The install script generates `~/.config/systemd/user/sast.service` from the curr
 
 Use **either** systemd or Docker, not both. After installation, do not run `make run` manually.
 
+> Agent-driven setup is stricter: an agent must use Docker and must **not** install the systemd service. If Docker is unavailable, it should stop and ask you to install Docker instead. See [`AGENTS.md`](AGENTS.md).
+
 ---
 
 ## Usage
@@ -374,7 +376,27 @@ Place it under the client's server map with the key name `sast`, save, and resta
 make install-skill
 ```
 
-This copies `.opencode/skills/sast-triage/SKILL.md` to `~/.config/opencode/skills/`. The skill defines the triage workflow (how to verify, classify, fix, and rescan); the MCP tools only provide actions.
+This copies `.opencode/skills/sast-triage/SKILL.md` to `~/.config/opencode/skills/`. To install it somewhere else, run `make install-skill SKILLS_DIR=/path/to/skills`. The skill defines the triage workflow (how to verify, classify, fix, and rescan); the MCP tools only provide actions.
+
+### Let an agent install everything
+
+If you want an AI agent to pull this repository, start the service, register the MCP server, and install the triage skill, paste this prompt into the agent:
+
+```text
+Set up the SAST MCP service from https://github.com/single9/sast-mcp.git.
+
+1. Clone it to ~/Development/sast, or pull if it already exists.
+2. Read AGENTS.md in the repository and follow its "One-shot setup" section.
+3. Use Docker if Docker and Docker Compose are available. If Docker is not available,
+   do not install or start the systemd service and do not start any other persistent
+   service; stop and tell me Docker is required.
+4. Register the `sast` MCP server globally for my client, install the `sast-triage`
+   skill, and verify with /health and the client's MCP list.
+5. Do not overwrite existing configuration; merge the `sast` entry.
+6. Report the repository path, service URL, MCP registration status, and skill path.
+```
+
+The full agent-facing instructions are in [`AGENTS.md`](AGENTS.md). They cover idempotent clone/pull, host dependencies, Docker-only service startup for agents, MCP registration for OpenCode / Claude Code / Claude Desktop, skill installation, verification, and safety rules.
 
 ### Verify the installation
 
@@ -610,6 +632,7 @@ Flow highlights:
 ### Project layout
 
 ```
+AGENTS.md            Agent setup and operation instructions
 app/
   main.py            FastAPI routes (API + UI)
   services.py        High-level scan creation/deletion flow

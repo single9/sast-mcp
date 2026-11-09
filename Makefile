@@ -1,6 +1,7 @@
 VENV := .venv
 PY := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
+SKILLS_DIR ?= $(HOME)/.config/opencode/skills
 
 .PHONY: install semgrep mcp run mcp-run install-skill test format docker-up docker-down docker-status docker-logs service-install service-status service-logs service-restart service-uninstall
 
@@ -21,10 +22,10 @@ run:
 mcp-run:
 	$(PY) -m sast_mcp.server
 
-# 把 triage skill 安裝到 OpenCode 全域 skills 目錄
+# 把 triage skill 安裝到 OpenCode 全域 skills 目錄（可用 SKILLS_DIR 覆寫）
 install-skill:
-	mkdir -p $(HOME)/.config/opencode/skills
-	cp -r .opencode/skills/sast-triage $(HOME)/.config/opencode/skills/
+	mkdir -p $(SKILLS_DIR)
+	cp -r .opencode/skills/sast-triage $(SKILLS_DIR)/
 
 test:
 	$(VENV)/bin/pytest -q
