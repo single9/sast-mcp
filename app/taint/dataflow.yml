@@ -1,0 +1,595 @@
+# 跨函式 taint 引擎的規則。
+#
+# 這份檔案只描述「什麼是來源、什麼是危險操作、什麼能清洗」，
+# 資料流怎麼走由 app/taint/analyzer.py 計算。
+#
+# 比對規則：
+#   os.system       完整名稱或結尾符合
+#   *.execute       只比對最後一段，可用 receivers 限制接收者
+#   system          只比對最後一段
+#   request.args    運算式本身或以 . [ ( 開頭的存取路徑
+
+sources:
+  python:
+    - request.args
+    - request.args.get
+    - request.form
+    - request.form.get
+    - request.values
+    - request.json
+    - request.get_json
+    - request.data
+    - request.files
+    - request.headers
+    - request.cookies
+    - request.query_params
+    - sys.argv
+    - os.environ
+    - os.getenv
+    - environ
+    - getenv
+    - input
+  javascript:
+    - req.query
+    - req.body
+    - req.params
+    - req.headers
+    - req.cookies
+    - request.query
+    - request.body
+    - request.params
+    - location.search
+    - location.hash
+    - document.location
+    - window.location
+    - process.argv
+    - process.env
+    - prompt
+  typescript:
+    - req.query
+    - req.body
+    - req.params
+    - req.headers
+    - req.cookies
+    - request.query
+    - request.body
+    - request.params
+    - location.search
+    - location.hash
+    - document.location
+    - window.location
+    - process.argv
+    - process.env
+    - prompt
+  java:
+    - "*.getParameter"
+    - "*.getParameterValues"
+    - "*.getHeader"
+    - "*.getHeaders"
+    - "*.getQueryString"
+    - "*.getInputStream"
+    - "*.getReader"
+    - System.getenv
+    - "args["
+  c_sharp:
+    - "*.Query"
+    - "*.Form"
+    - "*.Headers"
+    - "*.Cookies"
+    - "*.QueryString"
+    - Environment.GetEnvironmentVariable
+    - "args["
+  c:
+    - "argv["
+    - getenv
+    - gets
+    - scanf
+    - sscanf
+    - fgets
+    - fread
+    - read
+    - recv
+  cpp:
+    - "argv["
+    - getenv
+    - gets
+    - scanf
+    - sscanf
+    - fgets
+    - fread
+    - read
+    - recv
+    - std::cin
+    - cin
+  rust:
+    - std::env::args
+    - env::args
+    - std::env::var
+    - env::var
+    - std::io::stdin
+    - io::stdin
+
+sanitizers:
+  python:
+    - shlex.quote
+    - pipes.quote
+    - html.escape
+    - markupsafe.escape
+    - bleach.clean
+    - os.path.basename
+    - os.path.realpath
+    - werkzeug.utils.secure_filename
+    - secure_filename
+    - int
+    - float
+    - bool
+    - quote
+    - escape
+  javascript:
+    - parseInt
+    - parseFloat
+    - Number
+    - encodeURIComponent
+    - encodeURI
+    - escapeHtml
+    - DOMPurify.sanitize
+    - sanitizeHtml
+    - path.basename
+    - validator.escape
+  typescript:
+    - parseInt
+    - parseFloat
+    - Number
+    - encodeURIComponent
+    - encodeURI
+    - escapeHtml
+    - DOMPurify.sanitize
+    - sanitizeHtml
+    - path.basename
+    - validator.escape
+  java:
+    - Integer.parseInt
+    - Long.parseLong
+    - Double.parseDouble
+    - Float.parseFloat
+    - StringEscapeUtils.escapeHtml4
+    - URLEncoder.encode
+  c_sharp:
+    - int.Parse
+    - int.TryParse
+    - Convert.ToInt32
+    - HtmlEncoder.Encode
+    - Uri.EscapeDataString
+  c:
+    - atoi
+    - strtol
+    - strtoul
+  cpp:
+    - atoi
+    - strtol
+    - strtoul
+    - std::stoi
+    - std::stol
+  rust:
+    - html_escape::encode_text
+    - shell_escape::escape
+    - parse
+
+# 「污染寫入參數」的函式：值 = 目標參數索引。
+# 例如 sprintf(dst, fmt, src) 會把 src 的污染帶進 dst，
+# 之後 system(dst) 才接得起來。
+propagators:
+  c:
+    sprintf: 0
+    snprintf: 0
+    vsprintf: 0
+    vsnprintf: 0
+    strcpy: 0
+    strncpy: 0
+    strcat: 0
+    strncat: 0
+    memcpy: 0
+    memmove: 0
+  cpp:
+    sprintf: 0
+    snprintf: 0
+    vsprintf: 0
+    vsnprintf: 0
+    strcpy: 0
+    strncpy: 0
+    strcat: 0
+    strncat: 0
+    memcpy: 0
+    memmove: 0
+
+sinks:
+  - kind: command-injection
+    cwe: CWE-78
+    severity: critical
+    message: 命令注入：外部輸入流向命令執行
+    patterns:
+      python:
+        - os.system
+        - os.popen
+        - os.execv
+        - os.execve
+        - os.spawnl
+        - os.spawnv
+        - subprocess.run
+        - subprocess.call
+        - subprocess.Popen
+        - subprocess.check_output
+        - subprocess.check_call
+        - pty.spawn
+      javascript:
+        - child_process.exec
+        - child_process.execSync
+        - child_process.spawn
+        - child_process.spawnSync
+        - child_process.execFile
+        - exec
+        - execSync
+        - spawn
+        - spawnSync
+      typescript:
+        - child_process.exec
+        - child_process.execSync
+        - child_process.spawn
+        - child_process.spawnSync
+        - child_process.execFile
+        - exec
+        - execSync
+        - spawn
+        - spawnSync
+      java:
+        - Runtime.getRuntime().exec
+        - "*.exec"
+        - ProcessBuilder.start
+        - "*.start"
+      c_sharp:
+        - Process.Start
+        - "*.Start"
+      c:
+        - system
+        - popen
+        - execl
+        - execlp
+        - execle
+        - execv
+        - execvp
+        - execve
+        - posix_spawn
+      cpp:
+        - system
+        - std::system
+        - popen
+        - execv
+        - execvp
+        - execve
+      rust:
+        - Command::new
+        - std::process::Command
+        - "*.arg"
+    receivers: [Runtime, ProcessBuilder, Process, Command]
+
+  - kind: sql-injection
+    cwe: CWE-89
+    severity: high
+    message: SQL 注入：外部輸入流向 SQL 執行
+    patterns:
+      python:
+        - "*.execute"
+        - "*.executemany"
+        - "*.executescript"
+        - "*.execute_query"
+      javascript:
+        - "*.query"
+        - "*.raw"
+        - "*.execute"
+      typescript:
+        - "*.query"
+        - "*.raw"
+        - "*.execute"
+      java:
+        - "*.execute"
+        - "*.executeQuery"
+        - "*.executeUpdate"
+        - "*.createQuery"
+        - "*.createNativeQuery"
+      c_sharp:
+        - "*.ExecuteNonQuery"
+        - "*.ExecuteReader"
+        - "*.ExecuteScalar"
+      c:
+        - mysql_query
+        - sqlite3_exec
+        - PQexec
+      cpp:
+        - mysql_query
+        - sqlite3_exec
+        - PQexec
+      rust:
+        - sqlx::query
+        - diesel::sql_query
+        - "*.execute"
+    receivers:
+      - cursor
+      - conn
+      - connection
+      - db
+      - session
+      - engine
+      - stmt
+      - statement
+      - pool
+      - client
+      - knex
+      - sequelize
+      - SqlCommand
+      - command
+      - cmd
+      - conn
+      - sqlx
+
+  - kind: path-traversal
+    cwe: CWE-22
+    severity: high
+    message: 路徑穿越：外部輸入流向檔案操作
+    patterns:
+      python:
+        - open
+        - io.open
+        - os.open
+        - os.remove
+        - os.unlink
+        - shutil.copy
+        - shutil.copyfile
+        - shutil.move
+        - pathlib.Path
+        - send_file
+        - send_from_directory
+        - "*.read_text"
+        - "*.write_text"
+      javascript:
+        - fs.readFile
+        - fs.readFileSync
+        - fs.writeFile
+        - fs.writeFileSync
+        - fs.createReadStream
+        - fs.createWriteStream
+        - fs.unlink
+        - fs.unlinkSync
+        - fs.rm
+        - fs.rmSync
+      typescript:
+        - fs.readFile
+        - fs.readFileSync
+        - fs.writeFile
+        - fs.writeFileSync
+        - fs.createReadStream
+        - fs.createWriteStream
+        - fs.unlink
+        - fs.unlinkSync
+        - fs.rm
+        - fs.rmSync
+      java:
+        - Files.readAllBytes
+        - Files.readString
+        - Files.write
+        - Files.delete
+        - FileInputStream
+        - FileReader
+        - Paths.get
+        - Path.of
+      c_sharp:
+        - File.ReadAllText
+        - File.ReadAllBytes
+        - File.Open
+        - File.Delete
+        - FileStream
+        - StreamReader
+      c:
+        - fopen
+        - freopen
+        - open
+        - unlink
+        - remove
+      cpp:
+        - fopen
+        - freopen
+        - open
+        - unlink
+        - remove
+        - std::ifstream
+        - ifstream
+      rust:
+        - fs::read
+        - fs::read_to_string
+        - fs::write
+        - fs::remove_file
+        - File::open
+    receivers: [Path, pathlib, File, Files, os, shutil]
+
+  - kind: ssrf
+    cwe: CWE-918
+    severity: high
+    message: SSRF：外部輸入流向對外請求
+    patterns:
+      python:
+        - requests.get
+        - requests.post
+        - requests.put
+        - requests.request
+        - requests.Session.get
+        - urllib.request.urlopen
+        - urlopen
+        - httpx.get
+        - httpx.post
+        - httpx.request
+      javascript:
+        - fetch
+        - axios.get
+        - axios.post
+        - axios.request
+        - http.get
+        - https.get
+        - request
+      typescript:
+        - fetch
+        - axios.get
+        - axios.post
+        - axios.request
+        - http.get
+        - https.get
+        - request
+      java:
+        - "*.openConnection"
+        - HttpClient.send
+        - "*.getForObject"
+        - "*.postForObject"
+      c_sharp:
+        - WebClient.DownloadString
+        - HttpClient.GetAsync
+        - HttpClient.PostAsync
+        - "*.GetAsync"
+      c:
+        - curl_easy_setopt
+      cpp:
+        - curl_easy_setopt
+      rust:
+        - reqwest::get
+        - "*.send"
+    receivers: [URL, HttpClient, RestTemplate, WebClient, Client, RequestBuilder]
+
+  - kind: code-injection
+    cwe: CWE-94
+    severity: critical
+    message: 程式碼注入：外部輸入被當成程式碼執行
+    patterns:
+      python:
+        - eval
+        - exec
+        - compile
+        - marshal.loads
+      javascript:
+        - eval
+        - Function
+        - vm.runInNewContext
+        - vm.runInThisContext
+        - vm.runInContext
+      typescript:
+        - eval
+        - Function
+        - vm.runInNewContext
+        - vm.runInThisContext
+        - vm.runInContext
+      java:
+        - "*.eval"
+        - Class.forName
+        - "*.loadClass"
+      c_sharp:
+        - Assembly.Load
+        - "*.EvaluateAsync"
+      rust:
+        - "*.eval"
+
+  - kind: deserialization
+    cwe: CWE-502
+    severity: high
+    message: 不安全反序列化：外部輸入被還原成物件
+    patterns:
+      python:
+        - pickle.loads
+        - pickle.load
+        - dill.loads
+        - yaml.load
+        - marshal.loads
+      java:
+        - "*.readObject"
+        - XMLDecoder
+        - "*.fromXML"
+      c_sharp:
+        - BinaryFormatter.Deserialize
+        - "*.Deserialize"
+    receivers: [ObjectInputStream, BinaryFormatter, XMLDecoder]
+
+  - kind: xss
+    cwe: CWE-79
+    severity: medium
+    message: XSS：外部輸入未跳脫就輸出到頁面
+    patterns:
+      python:
+        - render_template_string
+        - Markup
+        - HttpResponse
+        - "*.write"
+      javascript:
+        - res.send
+        - res.write
+        - res.end
+        - document.write
+        - dangerouslySetInnerHTML
+      typescript:
+        - res.send
+        - res.write
+        - res.end
+        - document.write
+        - dangerouslySetInnerHTML
+      java:
+        - "*.getWriter"
+        - "*.println"
+        - "*.print"
+      c_sharp:
+        - Response.Write
+        - "*.Write"
+      rust:
+        - "*.body"
+    receivers: [response, res, Response, HttpResponse, PrintWriter, Markup]
+
+  - kind: format-string
+    cwe: CWE-134
+    severity: medium
+    message: 格式字串漏洞：外部輸入被當成格式字串
+    patterns:
+      c:
+        - printf
+        - fprintf
+        - sprintf
+        - snprintf
+        - vprintf
+        - vfprintf
+        - vsprintf
+        - vsnprintf
+        - syslog
+      cpp:
+        - printf
+        - fprintf
+        - sprintf
+        - snprintf
+        - vprintf
+        - vfprintf
+        - vsprintf
+        - vsnprintf
+        - syslog
+
+  - kind: buffer-overflow
+    cwe: CWE-120
+    severity: high
+    message: 緩衝區溢位：外部輸入複製到固定大小緩衝區
+    patterns:
+      c:
+        - strcpy
+        - strcat
+        - gets
+        - sprintf
+        - vsprintf
+        - memcpy
+        - memmove
+      cpp:
+        - strcpy
+        - strcat
+        - gets
+        - sprintf
+        - vsprintf
+        - memcpy
+        - memmove

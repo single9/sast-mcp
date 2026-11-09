@@ -7,7 +7,9 @@ rules:
   #   * taint 規則額外要求「使用者可控資料是否真的流到這裡」
   #
   # Semgrep OSS 的 taint 分析以單一檔案、函式內為主；跨檔案／跨程序
-  # 的完整追蹤需要 Semgrep Pro（SAST_SEMGREP_PRO=true）。
+  # 由內建的 app/taint/ 引擎補上（SAST_TAINT_ENGINE=true），不需要
+  # Semgrep Pro。若也想跑 Semgrep 自己的 --pro 追蹤，再設
+  # SAST_SEMGREP_PRO=true。
   # =====================================================================
 
   # ===================== Python =====================

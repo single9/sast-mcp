@@ -54,6 +54,21 @@ def run_scan(scan_id: str) -> EngineResult | None:
         findings = list(result.findings)
         warnings = list(result.errors)
 
+        if settings.taint_engine:
+            try:
+                from .taint import scan_taint
+
+                taint_findings, taint_warnings, taint_stats = scan_taint(
+                    root, findings, max_files=settings.taint_max_files
+                )
+                findings.extend(taint_findings)
+                warnings.extend(taint_warnings)
+            except Exception as exc:  # noqa: BLE001 - taint 失敗不應讓掃描失敗
+                logger.warning("跨函式 taint 失敗 id=%s: %s", scan_id, exc)
+                taint_stats = {"enabled": True, "error": f"{type(exc).__name__}: {exc}"}
+        else:
+            taint_stats = {"enabled": False}
+
         try:
             dependency_findings, dependency_warnings, dependency_stats = scan_cargo_lock(root)
         except Exception as exc:  # noqa: BLE001 - 依賴掃描失敗不應讓掃描失敗
@@ -98,6 +113,8 @@ def run_scan(scan_id: str) -> EngineResult | None:
             "dataflow": {
                 "enabled": settings.dataflow_traces,
                 "findings": sum(1 for finding in active_findings if finding.dataflow),
+                "interprocedural": taint_stats.get("interprocedural", 0),
+                "taint_engine": taint_stats,
             },
             "triage": triage_stats,
             "duration_ms": duration_ms,

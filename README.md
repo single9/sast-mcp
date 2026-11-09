@@ -144,7 +144,7 @@ Use **either** systemd or a container runtime (Docker/Podman), not both. After i
 ## Features
 
 - **Detection engines**: Uses [Semgrep](https://semgrep.dev/) first (semantic rules; 73 pattern rules plus 26 taint rules covering Rust, C#, C/C++, and Node.js). If Semgrep is unavailable, it automatically falls back to the built-in regex engine so the service still works. Rust scans also include OSV dependency vulnerabilities and Cargo supply-chain checks.
-- **Taint data flow**: Taint rules track attacker-controlled data from a source to a dangerous sink and record every intermediate step. Findings expose the path as `dataflow` in JSON, as `codeFlows` in SARIF, in the web UI, and through MCP. Semgrep OSS traces are intra-file; cross-file and inter-procedural tracing needs Semgrep Pro.
+- **Taint data flow**: Taint rules track attacker-controlled data from a source to a dangerous sink and record every intermediate step. Findings expose the path as `dataflow` in JSON, as `codeFlows` in SARIF, in the web UI, and through MCP. A built-in tree-sitter engine adds free cross-file and inter-procedural tracing on top of Semgrep CE; Semgrep Pro is optional and never required.
 - **Asynchronous jobs**: Scans run in the background; the API returns `202` immediately and you can poll for status.
 - **Result storage**: SQLite stores scans and findings; workspaces are kept under `data/workspaces/<scan_id>`.
 - **Language and risk classification**: After each scan, project languages are detected (file count, line count, percentage), and findings and risk levels are aggregated by language.
@@ -605,7 +605,9 @@ All settings are environment variables (see `.env.example`):
 | `SAST_SEMGREP_EXTRA_CONFIGS` | `p/rust` in Compose | Additional rule sets, comma-separated, layered on top of the primary set (for example `p/rust,p/secrets`; registry packs require network and fall back to built-in rules on failure) |
 | `SAST_SEMGREP_BIN` | `semgrep` | Path to the Semgrep executable |
 | `SAST_DATAFLOW_TRACES` | `true` | Attach source → propagator → sink traces to taint findings; disable to shorten scans |
-| `SAST_SEMGREP_PRO` | `false` | Run Semgrep with `--pro` for cross-file taint; requires a valid `SEMGREP_APP_TOKEN` |
+| `SAST_TAINT_ENGINE` | `true` | Built-in tree-sitter cross-file / inter-procedural taint engine; free, no Semgrep Pro required |
+| `SAST_TAINT_MAX_FILES` | `5000` | Maximum source files parsed by the built-in taint engine |
+| `SAST_SEMGREP_PRO` | `false` | Optional: run Semgrep with `--pro` for Semgrep's own cross-file taint; requires a valid `SEMGREP_APP_TOKEN` |
 | `SAST_MAX_UPLOAD_MB` | `50` | ZIP upload limit |
 | `SAST_MAX_EXTRACT_MB` | `200` | Total extracted size limit |
 | `SAST_MAX_FILES` | `20000` | Extracted file count limit |
@@ -673,12 +675,23 @@ Each taint finding carries a `dataflow` list of steps:
 
 `role` is `source`, `propagator`, or `sink`. The same steps appear in the scan UI, in SARIF `codeFlows` (so GitHub Code Scanning can render the path), and in MCP `get_findings` output. MCP omits step code unless `include_snippet=true`, and applies the same credential redaction as snippets.
 
+#### Built-in cross-file taint engine
+
+`app/taint/` is a free, self-contained interprocedural taint engine. It runs after Semgrep on every scan when `SAST_TAINT_ENGINE=true`:
+
+1. Parses all supported source files with tree-sitter (Python, JavaScript, TypeScript/TSX, Java, C#, C, C++, Rust).
+2. Builds per-function summaries with a fixpoint: which parameter reaches a sink, which parameter reaches the return value, and which functions return a source.
+3. Composes summaries at call sites, following local imports and `require()` bindings, to build a source → propagator → sink path across files.
+4. Converts hits into findings (`rule_id` starts with `taint-`) and merges them into Semgrep findings at the same sink line instead of duplicating them. The longer, cross-file path wins.
+
+Sources, sanitizers, sinks, and write-into-argument functions live in `app/taint/dataflow.yml`. The engine is context-insensitive: it keeps the shortest path per sink and does not claim full flow-sensitivity. It is a complement to Semgrep, not a replacement; if tree-sitter is not installed, the scan continues with Semgrep results only.
+
 Limitations:
 
-- Semgrep OSS taint analysis is intra-file. A value that crosses function or module boundaries may be reported without a complete trace.
-- Cross-file and inter-procedural taint requires Semgrep Pro: set `SAST_SEMGREP_PRO=true` and provide a valid `SEMGREP_APP_TOKEN`.
+- Semgrep OSS taint analysis is intra-file; the built-in engine covers the cross-file cases it can resolve through local imports.
+- Semgrep Pro is optional. Set `SAST_SEMGREP_PRO=true` and provide a valid `SEMGREP_APP_TOKEN` only if you want Semgrep's own `--pro` tracing as well.
 - JSON `dataflow_trace` is gated by Semgrep login in OSS. When it is unavailable, the engine runs a second `--text --dataflow-traces` pass over the affected files to recover the trace; if that also fails, the finding is still reported without `dataflow`.
-- Disable tracing with `SAST_DATAFLOW_TRACES=false` if scan time matters more than path detail.
+- Disable tracing with `SAST_DATAFLOW_TRACES=false`, or the post-pass with `SAST_TAINT_ENGINE=false`, if scan time matters more than path detail.
 
 ### Dependencies and supply chain (Rust / Cargo)
 

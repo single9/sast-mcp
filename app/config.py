@@ -112,6 +112,8 @@ class Settings:
     semgrep_bin: str
     semgrep_pro: bool
     dataflow_traces: bool
+    taint_engine: bool
+    taint_max_files: int
     max_upload_mb: int
     max_extract_mb: int
     max_files: int
@@ -161,6 +163,8 @@ def get_settings() -> Settings:
         semgrep_bin=os.environ.get("SAST_SEMGREP_BIN", "semgrep").strip() or "semgrep",
         semgrep_pro=_env_bool("SAST_SEMGREP_PRO", False),
         dataflow_traces=_env_bool("SAST_DATAFLOW_TRACES", True),
+        taint_engine=_env_bool("SAST_TAINT_ENGINE", True),
+        taint_max_files=max(1, _env_int("SAST_TAINT_MAX_FILES", 5000)),
         max_upload_mb=_env_int("SAST_MAX_UPLOAD_MB", 50),
         max_extract_mb=_env_int("SAST_MAX_EXTRACT_MB", 200),
         max_files=_env_int("SAST_MAX_FILES", 20000),

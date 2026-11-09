@@ -30,7 +30,10 @@ services:
       SAST_SUPPLY_CHAIN_ENABLED: ${SAST_SUPPLY_CHAIN_ENABLED:-true}
       # Semgrep taint 追蹤：finding 會附上 source → propagator → sink 路徑
       SAST_DATAFLOW_TRACES: ${SAST_DATAFLOW_TRACES:-true}
-      # 跨檔案／跨程序 taint 需要 Semgrep Pro（--pro）與有效 token
+      # 內建的跨函式／跨檔案 taint 引擎（tree-sitter，免費、不需 Semgrep Pro）
+      SAST_TAINT_ENGINE: ${SAST_TAINT_ENGINE:-true}
+      SAST_TAINT_MAX_FILES: ${SAST_TAINT_MAX_FILES:-5000}
+      # Semgrep Pro 只用來補強 Semgrep 自己的跨檔追蹤；不是本服務的必要元件
       SAST_SEMGREP_PRO: ${SAST_SEMGREP_PRO:-false}
     volumes:
       # 沿用專案內既有資料（SQLite、掃描工作區）

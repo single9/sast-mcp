@@ -143,7 +143,7 @@ systemd 與容器 runtime（Docker/Podman）兩種方式**擇一使用**；安�
 ## 功能
 
 - **偵測引擎**：優先使用 [Semgrep](https://semgrep.dev/)（語意規則，內建 73 條 pattern 規則與 26 條 taint 規則，含 Rust、C#、C/C++、Node.js），未安裝時自動退回內建 regex 引擎，服務仍可運作；Rust 另含 OSV 依賴漏洞與 Cargo 供應鏈檢查。
-- **Taint 資料流**：taint 規則追蹤使用者可控資料從 source 到危險 sink，並記錄每一個中間步驟。finding 會在 JSON 的 `dataflow`、SARIF 的 `codeFlows`、Web UI 與 MCP 輸出中呈現完整路徑。Semgrep OSS 的追蹤以單一檔案為主；跨檔案／跨程序需要 Semgrep Pro。
+- **Taint 資料流**：taint 規則追蹤使用者可控資料從 source 到危險 sink，並記錄每一個中間步驟。finding 會在 JSON 的 `dataflow`、SARIF 的 `codeFlows`、Web UI 與 MCP 輸出中呈現完整路徑。內建的 tree-sitter 引擎會在 Semgrep CE 之上補上免費的跨檔案／跨程序追蹤；Semgrep Pro 是選用項目，不是必要元件。
 - **非同步任務**：掃描在背景執行，API 立即回傳 `202`，可輪詢狀態。
 - **結果保存**：SQLite 儲存掃描與 findings，工作區保留於 `data/workspaces/<scan_id>`。
 - **語言與風險分類**：掃描後自動辨識專案語言（檔案數、行數、佔比），並依語言彙總 findings 與風險等級。
@@ -604,7 +604,9 @@ Agent 判讀流程與限制請看 `skills/sast-triage/SKILL.md`。
 | `SAST_SEMGREP_EXTRA_CONFIGS` | Compose 為 `p/rust` | 額外規則集，逗號分隔，疊加在主規則集上（如 `p/rust,p/secrets`；registry pack 需網路，失敗時自動退回內建規則） |
 | `SAST_SEMGREP_BIN` | `semgrep` | Semgrep 執行檔路徑 |
 | `SAST_DATAFLOW_TRACES` | `true` | 在 taint findings 附上 source → propagator → sink 路徑；關閉可縮短掃描時間 |
-| `SAST_SEMGREP_PRO` | `false` | 以 `--pro` 執行 Semgrep 取得跨檔案 taint；需要有效的 `SEMGREP_APP_TOKEN` |
+| `SAST_TAINT_ENGINE` | `true` | 內建 tree-sitter 跨檔案／跨程序 taint 引擎；免費、不需 Semgrep Pro |
+| `SAST_TAINT_MAX_FILES` | `5000` | taint 引擎最多解析的原始碼檔案數 |
+| `SAST_SEMGREP_PRO` | `false` | 選用：以 `--pro` 執行 Semgrep 取得它自己的跨檔 taint；需要有效的 `SEMGREP_APP_TOKEN` |
 | `SAST_MAX_UPLOAD_MB` | `50` | ZIP 上傳上限 |
 | `SAST_MAX_EXTRACT_MB` | `200` | 解壓縮後總大小上限 |
 | `SAST_MAX_FILES` | `20000` | 解壓縮檔案數上限 |
@@ -672,12 +674,23 @@ MCP server 的設定（獨立程序，見 `.env.example` 後半段）：
 
 `role` 是 `source`、`propagator` 或 `sink`。同一組步驟會出現在掃描 UI、SARIF `codeFlows`（GitHub Code Scanning 可直接顯示路徑）與 MCP `get_findings` 輸出。MCP 預設不附步驟程式碼，除非 `include_snippet=true`，並套用與 snippet 相同的憑證遮蔽。
 
+#### 內建跨檔案 taint 引擎
+
+`app/taint/` 是免費、自帶的跨程序 taint 引擎。每次掃描在 Semgrep 之後執行（`SAST_TAINT_ENGINE=true`）：
+
+1. 用 tree-sitter 解析支援的原始碼（Python、JavaScript、TypeScript/TSX、Java、C#、C、C++、Rust）。
+2. 以 fixpoint 計算每個函式的摘要：哪個參數會到 sink、哪個參數會到回傳值、哪些函式直接回傳 source。
+3. 在呼叫點組合摘要，沿著本地 import 與 `require()` 綁定，建立跨檔案的 source → propagator → sink 路徑。
+4. 轉成 finding（`rule_id` 以 `taint-` 開頭）；若 Semgrep 已在同一 sink 行回報，會把較長的跨檔案路徑併入該 finding，不重複回報。
+
+source、sanitizer、sink 與「污染寫入參數」的函式位於 `app/taint/dataflow.yml`。此引擎是 context-insensitive：每個 sink 只保留最短路徑，不宣稱完整的 flow-sensitive 分析。它是 Semgrep 的補強而非取代；若未安裝 tree-sitter，掃描仍會完成，只是少了這部分結果。
+
 限制：
 
-- Semgrep OSS 的 taint 分析以單一檔案為主；資料跨越函式或模組邊界時，可能只回報 finding 而沒有完整路徑。
-- 跨檔案／跨程序 taint 需要 Semgrep Pro：設定 `SAST_SEMGREP_PRO=true` 並提供有效的 `SEMGREP_APP_TOKEN`。
+- Semgrep OSS 的 taint 分析以單一檔案為主；內建引擎會處理它能沿本地 import 解析的跨檔案案例。
+- Semgrep Pro 是選用項目。若也想跑 Semgrep 自己的 `--pro` 追蹤，再設定 `SAST_SEMGREP_PRO=true` 並提供有效的 `SEMGREP_APP_TOKEN`。
 - Semgrep OSS 未登入時，JSON 的 `dataflow_trace` 會被過濾。此時引擎會對受影響檔案再跑一次 `--text --dataflow-traces` 補回路徑；若仍失敗，finding 仍會回報，只是沒有 `dataflow`。
-- 若掃描時間比路徑細節重要，可設 `SAST_DATAFLOW_TRACES=false` 關閉追蹤。
+- 若掃描時間比路徑細節重要，可設 `SAST_DATAFLOW_TRACES=false` 關閉 Semgrep 追蹤，或設 `SAST_TAINT_ENGINE=false` 關閉後處理。
 
 ### 依賴與供應鏈（Rust / Cargo）
 
