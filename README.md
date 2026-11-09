@@ -32,6 +32,8 @@ The full agent-facing instructions are in [`AGENTS.md`](AGENTS.md). They cover i
 
 ### Run locally
 
+Linux / macOS:
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
@@ -43,18 +45,55 @@ pip install -r requirements-semgrep.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
+Windows PowerShell:
+
+```powershell
+py -3 -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements-dev.txt
+
+# Optional: install Semgrep for more accurate semantic scanning
+pip install -r requirements-semgrep.txt
+
+uvicorn app.main:app --reload --port 8000
+```
+
 Open <http://localhost:8000> for the Web UI and <http://localhost:8000/docs> for the API docs.
 
-If you install `semgrep` inside the virtual environment, make sure it is on `PATH` when the service starts (`source .venv/bin/activate` is enough).
+If you install `semgrep` inside the virtual environment, make sure it is on `PATH` when the service starts (activating the virtual environment is enough).
 
 ### Docker (recommended)
 
+Docker Desktop works on macOS and Windows; Docker Engine with the Compose plugin works on Linux. The service URL is always `http://127.0.0.1:8000`.
+
+The quickest cross-platform path is the Python bootstrap script. It starts the service with Docker Compose (never systemd), waits for `/health`, and installs the triage skill:
+
 ```bash
-make docker-up     # same as docker compose up -d --build
-make docker-status
-make docker-logs   # follow logs; Ctrl+C to exit
-make docker-down   # stop and remove the container; data/ is preserved
+python3 scripts/agent_setup.py --wait-timeout 180
 ```
+
+Windows PowerShell:
+
+```powershell
+py -3 scripts/agent_setup.py --wait-timeout 180
+```
+
+To verify an existing installation without changing anything:
+
+```bash
+python3 scripts/agent_setup.py --check
+```
+
+Or drive Docker Compose yourself:
+
+```bash
+docker compose up -d --build
+docker compose ps
+docker compose logs -f        # follow logs; Ctrl+C to exit
+docker compose down           # stop and remove the container; data/ is preserved
+```
+
+On Unix, the same commands are available as `make docker-up`, `make docker-status`, `make docker-logs`, and `make docker-down`; `make` targets are not available on Windows.
 
 Docker is the default deployment method:
 
@@ -277,15 +316,22 @@ FastAPI SAST service ──► SQLite / workspaces
 The MCP server is a standalone host process and does not need to run continuously; the agent client starts it over stdio. It calls the SAST service over HTTP, so **the service must already be running**:
 
 ```bash
-# 1. SAST service (Docker or make run, pick one)
-make docker-up
+# 1. SAST service (Docker or local uvicorn, pick one)
+docker compose up -d --build
 curl -sS http://127.0.0.1:8000/health
 
 # 2. MCP server dependencies (install in the host venv, not in the container)
-pip install -r requirements-mcp.txt   # or make mcp
+pip install -r requirements-mcp.txt
 ```
 
-Always use **absolute paths** in client configuration (`.venv/bin/python` and `PYTHONPATH`), because the MCP process working directory is not necessarily the project directory.
+Always use **absolute paths** in client configuration (the venv Python and `PYTHONPATH`), because the MCP process working directory is not necessarily the project directory.
+
+| Platform | Interpreter |
+| --- | --- |
+| Linux / macOS | `/absolute/path/to/sast/.venv/bin/python` |
+| Windows | `C:\absolute\path\to\sast\.venv\Scripts\python.exe` |
+
+`python3 scripts/agent_setup.py` prints the exact registration commands for the current platform, including the correct interpreter path.
 
 ### Register with OpenCode
 
@@ -299,7 +345,7 @@ opencode mcp add sast --global \
 opencode mcp list
 ```
 
-If the SAST service has `SAST_API_KEY` set, add another `--env SAST_API_KEY=...`.
+If the SAST service has `SAST_API_KEY` set, add another `--env SAST_API_KEY=...`. On Windows, use the `.venv\Scripts\python.exe` interpreter path (see the table above).
 
 Equivalent manual configuration:
 
@@ -399,18 +445,31 @@ Place it under the client's server map with the key name `sast`, save, and resta
 ### Install the triage skill
 
 ```bash
-make install-skill
+python3 scripts/install_skill.py
 ```
 
-This copies `.opencode/skills/sast-triage/SKILL.md` to `~/.config/opencode/skills/`. To install it somewhere else, run `make install-skill SKILLS_DIR=/path/to/skills`. The skill defines the triage workflow (how to verify, classify, fix, and rescan); the MCP tools only provide actions.
+Windows PowerShell:
+
+```powershell
+py -3 scripts/install_skill.py
+```
+
+This copies `.opencode/skills/sast-triage/` to `~/.config/opencode/skills/` (or `$XDG_CONFIG_HOME/opencode/skills/`). To install it somewhere else, pass `--skills-dir /path/to/skills`. On Unix, `make install-skill` and `make install-skill SKILLS_DIR=/path/to/skills` are equivalent. The skill defines the triage workflow (how to verify, classify, fix, and rescan); the MCP tools only provide actions.
 
 ### Verify the installation
 
 After setup, confirm both layers are working:
 
 ```bash
-curl -sS http://127.0.0.1:8000/health          # SAST service
-claude mcp list | grep sast                    # Claude Code MCP connection
+python3 scripts/agent_setup.py --check             # service health + skill path
+claude mcp list | grep sast                        # Claude Code MCP connection
+```
+
+Windows PowerShell:
+
+```powershell
+py -3 scripts/agent_setup.py --check
+claude mcp list | Select-String sast
 ```
 
 Ask the agent to call `health` first; a response such as `{"status":"ok","engine":"semgrep",...}` means the whole path is working.
@@ -666,6 +725,8 @@ sast_mcp/
 deploy/
   sast.service.in    systemd user service template
 scripts/
+  agent_setup.py     Cross-platform Docker bootstrap and verification
+  install_skill.py   Cross-platform triage skill installer
   install-service.sh
   uninstall-service.sh
 .opencode/skills/

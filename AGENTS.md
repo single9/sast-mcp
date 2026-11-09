@@ -6,6 +6,23 @@ This file is written for an agent, not for a human reader. Follow it when the us
 "set up sast-mcp", "install the SAST MCP server", or asks you to scan a project with this
 service.
 
+## Platform notes
+
+The examples in this file are POSIX shell snippets. The portable path is the
+Python scripts in `scripts/`; they work on Linux, macOS, and Windows without
+`command -v`, `make`, `curl`, or a POSIX shell.
+
+- Docker Desktop (macOS/Windows) and Docker Engine with Compose (Linux) are both
+  supported. The service URL is always `http://127.0.0.1:8000`.
+- Do not use `command -v docker` as the only check. Use
+  `scripts/agent_setup.py` (it uses `shutil.which`), or `Get-Command docker` in
+  PowerShell.
+- Virtualenv paths: POSIX `.venv/bin/python`; Windows
+  `.venv\Scripts\python.exe`.
+- `make` targets are Unix-only. On Windows, run the Python scripts directly.
+- `scripts/agent_setup.py` accepts both Docker Compose v2 (`docker compose`) and
+  legacy `docker-compose`.
+
 ## One-shot setup
 
 Be idempotent: verify each step and skip it if it is already done. Do not overwrite user
@@ -30,6 +47,12 @@ configuration, do not discard local changes, and do not print secrets.
 REPO_DIR="${SAST_HOME:-$HOME/Development/sast}"
 ```
 
+Windows PowerShell:
+
+```powershell
+$REPO_DIR = if ($env:SAST_HOME) { $env:SAST_HOME } else { Join-Path $HOME "Development\sast" }
+```
+
 Use a different path only if the user specified one. Always use absolute paths in MCP
 configuration.
 
@@ -44,6 +67,17 @@ else
 fi
 ```
 
+Windows PowerShell:
+
+```powershell
+if (Test-Path (Join-Path $REPO_DIR ".git")) {
+  git -C $REPO_DIR pull --ff-only
+} else {
+  New-Item -ItemType Directory -Force (Split-Path $REPO_DIR) | Out-Null
+  git clone https://github.com/single9/sast-mcp.git $REPO_DIR
+}
+```
+
 If the working tree is dirty and `git pull --ff-only` fails, stop and report the dirty
 files. Do not reset, clean, or stash the user's work without permission.
 
@@ -55,7 +89,15 @@ environment:
 ```bash
 cd "$REPO_DIR"
 python3 -m venv .venv
-.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/python -m pip install -r requirements-dev.txt
+```
+
+Windows PowerShell:
+
+```powershell
+cd $REPO_DIR
+py -3 -m venv .venv
+.venv\Scripts\python -m pip install -r requirements-dev.txt
 ```
 
 `requirements-dev.txt` includes the MCP and test dependencies. If `python3 -m venv` fails,
@@ -63,37 +105,37 @@ report the missing system package instead of installing OS packages without perm
 
 ### 4. Start the SAST service with Docker
 
-Check Docker first:
+Use the cross-platform bootstrap script. It checks Docker with `shutil.which`, supports
+both `docker compose` and `docker-compose`, starts the service, waits for `/health`, and
+installs the triage skill:
 
 ```bash
-if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
-  echo "Docker with Compose is required for agent setup; not starting a service."
-  exit 1
-fi
-
 cd "$REPO_DIR"
-docker compose up -d --build
+python3 scripts/agent_setup.py --wait-timeout 180
 ```
 
-Wait for health:
+Windows PowerShell:
+
+```powershell
+cd $REPO_DIR
+py -3 scripts/agent_setup.py --wait-timeout 180
+```
+
+If Docker or Compose is missing, the script exits with an error. Do not fall back to
+`make service-install` or any other service manager.
+
+If the service is already running and you only want to verify it, run:
 
 ```bash
-for i in $(seq 1 90); do
-  if curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; then
-    curl -sS http://127.0.0.1:8000/health
-    break
-  fi
-  sleep 2
-done
+python3 scripts/agent_setup.py --check
 ```
-
-If `/health` never succeeds, inspect `docker compose logs --tail=100` and report the
-failure. Do not fall back to `make service-install` or any other service manager.
 
 ### 5. Register the MCP server
 
-Use the absolute path to the host venv. Add `SAST_API_KEY` only if the service has one
-configured; never invent or print a key.
+Use the absolute path to the host venv. On Windows, the interpreter is
+`$REPO_DIR\.venv\Scripts\python.exe` instead of `$REPO_DIR/.venv/bin/python`;
+`scripts/agent_setup.py` prints the exact command for the current platform. Add
+`SAST_API_KEY` only if the service has one configured; never invent or print a key.
 
 #### OpenCode
 
@@ -159,19 +201,26 @@ Fully quit and reopen Claude Desktop after saving.
 
 ### 6. Install the triage skill
 
-For OpenCode:
+The setup script in step 4 installs the skill automatically. To reinstall it or choose a
+different directory:
 
 ```bash
 cd "$REPO_DIR"
-make install-skill
+python3 scripts/install_skill.py
+python3 scripts/install_skill.py --skills-dir /path/to/skills
 ```
 
-This copies `.opencode/skills/sast-triage/` to `~/.config/opencode/skills/sast-triage/`.
-To install somewhere else:
+Windows PowerShell:
 
-```bash
-make install-skill SKILLS_DIR=/path/to/skills
+```powershell
+cd $REPO_DIR
+py -3 scripts/install_skill.py
+py -3 scripts/install_skill.py --skills-dir C:\path\to\skills
 ```
+
+This copies `.opencode/skills/sast-triage/` to `~/.config/opencode/skills/sast-triage/`
+by default (or `$XDG_CONFIG_HOME/opencode/skills/`). `make install-skill` remains
+available on Unix.
 
 Other clients: keep the skill file in the repository and reference it explicitly, or copy
 it into the client's skills directory if the client supports one.
@@ -179,10 +228,19 @@ it into the client's skills directory if the client supports one.
 ### 7. Verify
 
 ```bash
-curl -sS http://127.0.0.1:8000/health
+python3 scripts/agent_setup.py --check
 opencode mcp list | grep sast
 "$REPO_DIR/.venv/bin/python" -c "import sast_mcp.server; print('mcp import ok')"
 test -f "$HOME/.config/opencode/skills/sast-triage/SKILL.md" && echo "skill ok"
+```
+
+Windows PowerShell:
+
+```powershell
+py -3 scripts/agent_setup.py --check
+opencode mcp list | Select-String sast
+& "$REPO_DIR\.venv\Scripts\python.exe" -c "import sast_mcp.server; print('mcp import ok')"
+Test-Path "$HOME\.config\opencode\skills\sast-triage\SKILL.md"
 ```
 
 Then ask the agent client to call the `health` tool. A response such as

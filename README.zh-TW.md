@@ -31,6 +31,8 @@
 
 ### 本機執行
 
+Linux / macOS：
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
@@ -42,18 +44,55 @@ pip install -r requirements-semgrep.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
+Windows PowerShell：
+
+```powershell
+py -3 -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements-dev.txt
+
+# 選用：安裝 Semgrep 以取得較精準的語意掃描
+pip install -r requirements-semgrep.txt
+
+uvicorn app.main:app --reload --port 8000
+```
+
 開啟 <http://localhost:8000> 使用 Web UI，API 文件在 <http://localhost:8000/docs>。
 
-若把 `semgrep` 裝在虛擬環境內，請確認啟動服務時 PATH 找得到它（先 `source .venv/bin/activate` 即可）。
+若把 `semgrep` 裝在虛擬環境內，請確認啟動服務時 PATH 找得到它（先啟用虛擬環境即可）。
 
 ### Docker（建議）
 
+macOS / Windows 可用 Docker Desktop，Linux 用 Docker Engine 搭配 Compose plugin。服務網址一律是 `http://127.0.0.1:8000`。
+
+最快的跨平台方式是 Python bootstrap 腳本。它會用 Docker Compose（不會用 systemd）啟動服務、等待 `/health`，並安裝 triage skill：
+
 ```bash
-make docker-up     # 等同 docker compose up -d --build
-make docker-status
-make docker-logs   # 追蹤日誌，Ctrl+C 離開
-make docker-down   # 停止並移除容器，data/ 仍保留
+python3 scripts/agent_setup.py --wait-timeout 180
 ```
+
+Windows PowerShell：
+
+```powershell
+py -3 scripts/agent_setup.py --wait-timeout 180
+```
+
+只驗證既有安裝、不做任何變更：
+
+```bash
+python3 scripts/agent_setup.py --check
+```
+
+也可以自己操作 Docker Compose：
+
+```bash
+docker compose up -d --build
+docker compose ps
+docker compose logs -f        # 追蹤日誌，Ctrl+C 離開
+docker compose down           # 停止並移除容器，data/ 仍保留
+```
+
+Unix 上同樣有 `make docker-up`、`make docker-status`、`make docker-logs`、`make docker-down`；Windows 沒有 `make` 指令。
 
 Docker 是預設的部署方式：
 
@@ -276,15 +315,22 @@ FastAPI SAST 服務 ──► SQLite / workspaces
 MCP server 是 host 上的獨立程序，不需要常駐；Agent 客戶端會用 stdio 啟動它。它透過 HTTP 呼叫 SAST 服務，所以**服務必須先跑起來**：
 
 ```bash
-# 1. SAST 服務（Docker 或 make run 擇一）
-make docker-up
+# 1. SAST 服務（Docker 或本機 uvicorn 擇一）
+docker compose up -d --build
 curl -sS http://127.0.0.1:8000/health
 
 # 2. MCP server 依賴（裝在 host 的 venv，不要裝進容器）
-pip install -r requirements-mcp.txt   # 或 make mcp
+pip install -r requirements-mcp.txt
 ```
 
-客戶端設定請一律使用**絕對路徑**（`.venv/bin/python` 與 `PYTHONPATH`），因為 MCP 程序的 cwd 不一定是專案目錄。
+客戶端設定請一律使用**絕對路徑**（venv 的 Python 與 `PYTHONPATH`），因為 MCP 程序的 cwd 不一定是專案目錄。
+
+| 平台 | 直譯器路徑 |
+| --- | --- |
+| Linux / macOS | `/absolute/path/to/sast/.venv/bin/python` |
+| Windows | `C:\absolute\path\to\sast\.venv\Scripts\python.exe` |
+
+`python3 scripts/agent_setup.py` 會依目前平台印出正確的註冊指令，包含正確的解譯器路徑。
 
 ### OpenCode 註冊
 
@@ -298,7 +344,7 @@ opencode mcp add sast --global \
 opencode mcp list
 ```
 
-若 SAST 服務有設 `SAST_API_KEY`，再加一個 `--env SAST_API_KEY=...`。
+若 SAST 服務有設 `SAST_API_KEY`，再加一個 `--env SAST_API_KEY=...`。Windows 請用上表的 `.venv\Scripts\python.exe` 路徑。
 
 手動設定的等價片段：
 
@@ -398,18 +444,31 @@ Claude Desktop 沒有 CLI，直接改設定檔（沒有 `mcpServers` 鍵就自�
 ### 安裝 triage Skill
 
 ```bash
-make install-skill
+python3 scripts/install_skill.py
 ```
 
-這會把 `.opencode/skills/sast-triage/SKILL.md` 複製到 `~/.config/opencode/skills/`。要裝到其他位置，執行 `make install-skill SKILLS_DIR=/path/to/skills`。Skill 定義判讀流程（如何驗證、分類、修補、重掃），MCP 工具只提供動作。
+Windows PowerShell：
+
+```powershell
+py -3 scripts/install_skill.py
+```
+
+這會把 `.opencode/skills/sast-triage/` 複製到 `~/.config/opencode/skills/`（或 `$XDG_CONFIG_HOME/opencode/skills/`）。要裝到其他位置，加上 `--skills-dir /path/to/skills`。Unix 上 `make install-skill` 與 `make install-skill SKILLS_DIR=/path/to/skills` 效果相同。Skill 定義判讀流程（如何驗證、分類、修補、重掃），MCP 工具只提供動作。
 
 ### 驗證安裝
 
 裝好後先確認服務與 MCP 兩層都通：
 
 ```bash
-curl -sS http://127.0.0.1:8000/health          # SAST 服務
-claude mcp list | grep sast                    # Claude Code 的 MCP 連線
+python3 scripts/agent_setup.py --check             # 服務健康狀態 + Skill 路徑
+claude mcp list | grep sast                        # Claude Code 的 MCP 連線
+```
+
+Windows PowerShell：
+
+```powershell
+py -3 scripts/agent_setup.py --check
+claude mcp list | Select-String sast
 ```
 
 Agent 端請它先呼叫 `health`；回傳 `{"status":"ok","engine":"semgrep",...}` 就代表整條路徑沒問題。
@@ -665,6 +724,8 @@ sast_mcp/
 deploy/
   sast.service.in    systemd user service 範本
 scripts/
+  agent_setup.py     跨平台 Docker bootstrap 與驗證
+  install_skill.py   跨平台 triage Skill 安裝器
   install-service.sh
   uninstall-service.sh
 .opencode/skills/
