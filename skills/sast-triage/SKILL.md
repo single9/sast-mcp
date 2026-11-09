@@ -99,7 +99,8 @@ const summary = await tools.sast.summarize_scan({ scan_id: scanId, top: 20 });
 6. `by_file`：集中在哪些檔案；優先看生產程式碼。
 7. `omitted_rule_groups`：還有多少群組沒顯示，必要時提高 `top`。
 8. `by_engine`：區分 `semgrep` / `builtin-regex` / `osv` / `supply-chain`；不要把依賴漏洞與原始碼 pattern 混在一起排序。
-9. `dependencies` / `supply_chain`：`lockfiles`、`packages`、`vulnerabilities`、`vulnerable_packages`、`manifests`、`build_scripts`。若 `dependencies.enabled=false`，先確認是設定關閉還是舊掃描沒有這個階段。
+9. `dataflow`：`findings_with_traces` 與 `by_rule` 顯示有多少 finding 帶有 taint 路徑；沒有路徑不代表安全，只代表引擎沒有追到。
+10. `dependencies` / `supply_chain`：`lockfiles`、`packages`、`vulnerabilities`、`vulnerable_packages`、`manifests`、`build_scripts`。若 `dependencies.enabled=false`，先確認是設定關閉還是舊掃描沒有這個階段。
 
 ### 4. 逐一驗證高風險 finding
 
@@ -116,11 +117,14 @@ const page = await tools.sast.get_findings({
 對每一筆：
 
 1. 用 `read` 工具打開 `file`，定位到 `line` 附近，**不要只看 snippet**。
-2. 往上看資料來源（request、env、DB、檔案），往下看 sink 與防護。
-3. 確認程式碼是否真的會被執行：路由是否註冊、函式是否被呼叫、是否 dead code。
-4. 確認是否為測試／範例／fixture：路徑含 `test`、`spec`、`__tests__`、`fixtures`、`examples` 等，仍要確認是否會進生產。
-5. 檢查框架或語言層的保護：ORM / prepared statement、輸出 escaping、`shell=False`、`yaml.safe_load`、路徑正規化、auth middleware。
-6. 只有在你說得出「為什麼這裡安全」或「為什麼這裡可利用」時才下結論。
+2. 若 finding 有 `dataflow`，先用它當路線圖：`source` 是否真的由外部控制、`propagator` 是否改變了資料、`sink` 是否缺少防護。路徑只是引擎的追蹤結果，仍要對照原始碼確認。
+3. 往上看資料來源（request、env、DB、檔案），往下看 sink 與防護。
+4. 確認程式碼是否真的會被執行：路由是否註冊、函式是否被呼叫、是否 dead code。
+5. 確認是否為測試／範例／fixture：路徑含 `test`、`spec`、`__tests__`、`fixtures`、`examples` 等，仍要確認是否會進生產。
+6. 檢查框架或語言層的保護：ORM / prepared statement、輸出 escaping、`shell=False`、`yaml.safe_load`、路徑正規化、auth middleware。
+7. 只有在你說得出「為什麼這裡安全」或「為什麼這裡可利用」時才下結論。
+
+Semgrep OSS 的 taint 追蹤以單一檔案為主；若 source 與 sink 跨函式／跨模組，`dataflow` 可能不完整。不要因為路徑中斷就判定安全，也不要自行補出一條原始碼沒有支持的路徑。
 
 需要更多上下文時，再要求 snippet：
 

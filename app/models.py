@@ -40,6 +40,17 @@ def count_by_severity(findings: list["Finding"]) -> dict[str, int]:
     return counts
 
 
+class DataflowStep(BaseModel):
+    """Taint 資料流的一站：source、中間傳遞或 sink。"""
+
+    role: Literal["source", "propagator", "sink"] = "propagator"
+    file: str
+    line: int | None = None
+    end_line: int | None = None
+    column: int | None = None
+    code: str | None = None
+
+
 class Finding(BaseModel):
     rule_id: str
     severity: Severity = "info"
@@ -51,6 +62,9 @@ class Finding(BaseModel):
     cwe: list[str] = Field(default_factory=list)
     engine: str = ""
     snippet: str | None = None
+    # Semgrep taint mode 的 source → propagator → sink 路徑。
+    # 只有 taint 規則且引擎能提供追蹤時才會有內容。
+    dataflow: list[DataflowStep] = Field(default_factory=list)
     # 跨掃描穩定識別碼；由 rule_id + 檔案 + 程式碼片段（或訊息）雜湊而來。
     fingerprint: str | None = None
     triage_status: str | None = None

@@ -15,7 +15,7 @@ from mcp.server.fastmcp.exceptions import ToolError
 from sast_mcp import server
 from sast_mcp.client import SastClient, SastError
 from sast_mcp.config import reset_mcp_settings_cache
-from sast_mcp.formatting import aggregate_findings, redact_snippet
+from sast_mcp.formatting import aggregate_findings, finding_to_dict, redact_snippet
 from sast_mcp.local import LocalSourceError, create_source_zip
 
 
@@ -553,3 +553,60 @@ def test_triage_status_validation(monkeypatch):
 
     with pytest.raises(ToolError, match="confirm=true"):
         asyncio.run(server.delete_triage("fp", confirm=False))
+
+
+def test_finding_to_dict_includes_dataflow_without_code_by_default():
+    finding = {
+        "rule_id": "python-taint-command-injection",
+        "severity": "high",
+        "message": "command injection",
+        "file": "src/app.py",
+        "line": 5,
+        "dataflow": [
+            {
+                "role": "source",
+                "file": "src/app.py",
+                "line": 1,
+                "code": "PASSWORD = \"hunter2\"",
+            },
+            {
+                "role": "sink",
+                "file": "src/app.py",
+                "line": 5,
+                "code": "os.system(cmd)",
+            },
+        ],
+    }
+
+    data = finding_to_dict(finding)
+    assert data["dataflow_steps"] == 2
+    assert [step["role"] for step in data["dataflow"]] == ["source", "sink"]
+    assert all("code" not in step for step in data["dataflow"])
+
+    with_code = finding_to_dict(finding, include_snippet=True)
+    assert "hunter2" not in with_code["dataflow"][0]["code"]
+    assert "***" in with_code["dataflow"][0]["code"]
+    assert with_code["dataflow"][1]["code"] == "os.system(cmd)"
+
+
+def test_aggregate_findings_counts_dataflow():
+    findings = [
+        {
+            "rule_id": "r1",
+            "severity": "high",
+            "message": "m1",
+            "file": "a.py",
+            "line": 1,
+            "dataflow": [{"role": "source", "file": "a.py", "line": 1}],
+        },
+        {
+            "rule_id": "r2",
+            "severity": "low",
+            "message": "m2",
+            "file": "b.py",
+            "line": 2,
+        },
+    ]
+    summary = aggregate_findings(findings)
+    assert summary["dataflow"]["findings_with_traces"] == 1
+    assert summary["dataflow"]["by_rule"] == [{"rule_id": "r1", "count": 1}]

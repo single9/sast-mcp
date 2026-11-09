@@ -16,6 +16,36 @@ _LEVEL = {
 }
 
 
+def _region(line: int | None, end_line: int | None, column: int | None) -> dict:
+    region: dict = {}
+    if line:
+        region["startLine"] = line
+    if column:
+        region["startColumn"] = column
+    if end_line:
+        region["endLine"] = end_line
+    return region
+
+
+def _code_flows(finding: Finding) -> list[dict]:
+    """把 taint 路徑轉成 SARIF codeFlows，讓 GitHub Code Scanning 也能顯示。"""
+    locations = []
+    for step in finding.dataflow:
+        physical: dict = {"artifactLocation": {"uri": step.file}}
+        region = _region(step.line, step.end_line, step.column)
+        if region:
+            physical["region"] = region
+        location: dict = {"physicalLocation": physical}
+        label = step.role
+        if step.code:
+            label = f"{label}: {step.code}"
+        location["message"] = {"text": label}
+        locations.append({"location": location})
+    if not locations:
+        return []
+    return [{"threadFlows": [{"locations": locations}]}]
+
+
 def scan_to_sarif(scan: ScanOut, findings: list[Finding]) -> dict:
     rule_index: dict[str, int] = {}
     rules: list[dict] = []
@@ -67,8 +97,11 @@ def scan_to_sarif(scan: ScanOut, findings: list[Finding]) -> dict:
                 "triageNote": finding.triage_note,
                 "suppressed": finding.suppressed,
                 "regressed": finding.regressed,
+                "dataflowSteps": len(finding.dataflow),
             },
         }
+        if finding.dataflow:
+            result["codeFlows"] = _code_flows(finding)
         if finding.suppressed:
             result["suppressions"] = [
                 {

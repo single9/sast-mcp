@@ -142,7 +142,8 @@ systemd 與容器 runtime（Docker/Podman）兩種方式**擇一使用**；安�
 
 ## 功能
 
-- **偵測引擎**：優先使用 [Semgrep](https://semgrep.dev/)（語意規則，內建 73 條，含 Rust、C#、C/C++、Node.js），未安裝時自動退回內建 regex 引擎，服務仍可運作；Rust 另含 OSV 依賴漏洞與 Cargo 供應鏈檢查。
+- **偵測引擎**：優先使用 [Semgrep](https://semgrep.dev/)（語意規則，內建 73 條 pattern 規則與 26 條 taint 規則，含 Rust、C#、C/C++、Node.js），未安裝時自動退回內建 regex 引擎，服務仍可運作；Rust 另含 OSV 依賴漏洞與 Cargo 供應鏈檢查。
+- **Taint 資料流**：taint 規則追蹤使用者可控資料從 source 到危險 sink，並記錄每一個中間步驟。finding 會在 JSON 的 `dataflow`、SARIF 的 `codeFlows`、Web UI 與 MCP 輸出中呈現完整路徑。Semgrep OSS 的追蹤以單一檔案為主；跨檔案／跨程序需要 Semgrep Pro。
 - **非同步任務**：掃描在背景執行，API 立即回傳 `202`，可輪詢狀態。
 - **結果保存**：SQLite 儲存掃描與 findings，工作區保留於 `data/workspaces/<scan_id>`。
 - **語言與風險分類**：掃描後自動辨識專案語言（檔案數、行數、佔比），並依語言彙總 findings 與風險等級。
@@ -602,6 +603,8 @@ Agent 判讀流程與限制請看 `skills/sast-triage/SKILL.md`。
 | `SAST_SEMGREP_CONFIG` | 內建 `app/rules` | 主規則集，可填 `p/default`（需網路）或自訂路徑 |
 | `SAST_SEMGREP_EXTRA_CONFIGS` | Compose 為 `p/rust` | 額外規則集，逗號分隔，疊加在主規則集上（如 `p/rust,p/secrets`；registry pack 需網路，失敗時自動退回內建規則） |
 | `SAST_SEMGREP_BIN` | `semgrep` | Semgrep 執行檔路徑 |
+| `SAST_DATAFLOW_TRACES` | `true` | 在 taint findings 附上 source → propagator → sink 路徑；關閉可縮短掃描時間 |
+| `SAST_SEMGREP_PRO` | `false` | 以 `--pro` 執行 Semgrep 取得跨檔案 taint；需要有效的 `SEMGREP_APP_TOKEN` |
 | `SAST_MAX_UPLOAD_MB` | `50` | ZIP 上傳上限 |
 | `SAST_MAX_EXTRACT_MB` | `200` | 解壓縮後總大小上限 |
 | `SAST_MAX_FILES` | `20000` | 解壓縮檔案數上限 |
@@ -636,7 +639,7 @@ MCP server 的設定（獨立程序，見 `.env.example` 後半段）：
 
 ## 偵測規則
 
-內建規則位於 `app/rules/`（`default.yml`、`rust.yml`、`node.yml`、`c_cpp.yml`、`csharp.yml`，Semgrep），涵蓋：
+內建規則位於 `app/rules/`（`default.yml`、`rust.yml`、`node.yml`、`c_cpp.yml`、`csharp.yml`、`taint.yml`，Semgrep），涵蓋：
 
 - Python：`eval` / `exec` / `os.system` / `subprocess(shell=True)` / pickle / `yaml.load` / 弱雜湊 / SQL 字串拼接 / Flask debug / `verify=False`
 - JavaScript / TypeScript：`eval` / `new Function` / `innerHTML` / `dangerouslySetInnerHTML` / `document.write` / `child_process.exec` / SQL 樣板字串
@@ -649,6 +652,32 @@ MCP server 的設定（獨立程序，見 `.env.example` 後半段）：
 - 跨語言：私鑰、AWS / Google / Slack 權杖、URL 內嵌帳密、硬編碼密碼
 
 內建 regex 引擎（`app/engines/regex_engine.py`）提供對應的近似規則，rule id 以 `builtin-` 開頭。它不進行語意分析，誤報率較高，適合當後備或快速檢查。
+
+### Taint 資料流
+
+`app/rules/taint.yml` 增加 26 條 taint 規則（`mode: taint`），涵蓋命令注入、SQL injection、路徑穿越、SSRF、XSS、程式碼注入，以及 C/C++ 格式字串。支援 Python、JavaScript/TypeScript、Java、C#、C/C++ 與 Rust。
+
+每筆 taint finding 會帶有 `dataflow` 步驟清單：
+
+```json
+{
+  "role": "source",
+  "file": "src/app.py",
+  "line": 5,
+  "end_line": 5,
+  "column": 12,
+  "code": "request.args.get(\"name\")"
+}
+```
+
+`role` 是 `source`、`propagator` 或 `sink`。同一組步驟會出現在掃描 UI、SARIF `codeFlows`（GitHub Code Scanning 可直接顯示路徑）與 MCP `get_findings` 輸出。MCP 預設不附步驟程式碼，除非 `include_snippet=true`，並套用與 snippet 相同的憑證遮蔽。
+
+限制：
+
+- Semgrep OSS 的 taint 分析以單一檔案為主；資料跨越函式或模組邊界時，可能只回報 finding 而沒有完整路徑。
+- 跨檔案／跨程序 taint 需要 Semgrep Pro：設定 `SAST_SEMGREP_PRO=true` 並提供有效的 `SEMGREP_APP_TOKEN`。
+- Semgrep OSS 未登入時，JSON 的 `dataflow_trace` 會被過濾。此時引擎會對受影響檔案再跑一次 `--text --dataflow-traces` 補回路徑；若仍失敗，finding 仍會回報，只是沒有 `dataflow`。
+- 若掃描時間比路徑細節重要，可設 `SAST_DATAFLOW_TRACES=false` 關閉追蹤。
 
 ### 依賴與供應鏈（Rust / Cargo）
 
@@ -790,7 +819,7 @@ examples/vulnerable_app.py
 .venv/bin/pytest -q
 ```
 
-測試涵蓋：健康檢查、ZIP 掃描與 finding 內容、severity 過濾、SARIF、zip slip、非 ZIP 上傳、Git URL 驗證、API key、UI 渲染、引擎解析（含以假 semgrep 驗證 JSON 轉換）、MCP 本機打包（Git-aware／符號連結）、憑證遮蔽、API client 與工具介面，以及 triage（fingerprint、跨掃描抑制、inline ignore、export/import、舊 DB 遷移）。
+測試涵蓋：健康檢查、ZIP 掃描與 finding 內容、severity 過濾、SARIF、zip slip、非 ZIP 上傳、Git URL 驗證、API key、UI 渲染、引擎解析（含以假 semgrep 驗證 JSON 轉換）、taint 資料流解析與 DB／SARIF roundtrip、MCP 本機打包（Git-aware／符號連結）、憑證遮蔽、API client 與工具介面，以及 triage（fingerprint、跨掃描抑制、inline ignore、export/import、舊 DB 遷移）。
 
 Semgrep 規則驗證：
 

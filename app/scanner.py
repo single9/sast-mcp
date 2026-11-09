@@ -95,6 +95,10 @@ def run_scan(scan_id: str) -> EngineResult | None:
             "findings_total": len(findings),
             "suppressed": len(findings) - len(active_findings),
             "severity": count_by_severity(active_findings),
+            "dataflow": {
+                "enabled": settings.dataflow_traces,
+                "findings": sum(1 for finding in active_findings if finding.dataflow),
+            },
             "triage": triage_stats,
             "duration_ms": duration_ms,
             "engine": engine.name,

@@ -283,16 +283,23 @@ After setup, use the MCP tools in this order:
 1. `health` — confirm the service and engine.
 2. `scan_path` — scan the project directory.
 3. `wait_for_scan` — wait for completion.
-4. `summarize_scan` — inspect `by_language`, `by_engine`, `dependencies`, and
+4. `summarize_scan` — inspect `by_language`, `by_engine`, `dataflow`, `dependencies`, and
    `supply_chain` first; do not dump every finding.
 5. `get_findings` — filter by severity, rule, or file only as needed.
-6. Verify findings against the real source before classifying them.
+6. Verify findings against the real source before classifying them. If a finding has
+   `dataflow`, use the `source` → `propagator` → `sink` steps as a map, then confirm the
+   source is attacker-controlled and the sink is not sanitized in the actual code.
 7. `triage_findings` — record `false_positive`, `accepted_risk`, `wontfix`, `fixed`, or
    `needs_review` with a reason. Use `needs_review` when unsure.
 8. `export_sarif` — return the file path, not the entire SARIF document.
 
 Do not request code snippets by default. If snippets are necessary, keep redaction enabled
-unless the user explicitly approves showing raw values.
+unless the user explicitly approves showing raw values. MCP `dataflow` steps follow the same
+policy: locations are returned without code unless `include_snippet=true`.
+
+Semgrep OSS taint traces are intra-file. Do not claim a complete cross-file path unless the
+service runs with `SAST_SEMGREP_PRO=true` and a valid Semgrep token. Disable tracing with
+`SAST_DATAFLOW_TRACES=false` if scan time matters more than path detail.
 
 ## Troubleshooting
 

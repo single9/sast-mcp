@@ -48,6 +48,34 @@ def redact_snippet(text: str) -> str:
     return redacted
 
 
+def _dataflow_steps(
+    finding: dict[str, Any],
+    *,
+    include_snippet: bool,
+    redact_secrets: bool,
+) -> list[dict[str, Any]]:
+    """整理 taint 路徑；預設只給位置，不給程式碼。"""
+    steps: list[dict[str, Any]] = []
+    for raw in finding.get("dataflow") or []:
+        if not isinstance(raw, dict):
+            continue
+        step: dict[str, Any] = {
+            "role": raw.get("role") or "propagator",
+            "file": raw.get("file"),
+            "line": raw.get("line"),
+            "end_line": raw.get("end_line"),
+            "column": raw.get("column"),
+        }
+        if include_snippet:
+            code = raw.get("code")
+            if code:
+                step["code"] = redact_snippet(code) if redact_secrets else code
+            else:
+                step["code"] = None
+        steps.append(step)
+    return steps
+
+
 def finding_to_dict(
     finding: dict[str, Any],
     *,
@@ -70,6 +98,14 @@ def finding_to_dict(
         "suppressed": bool(finding.get("suppressed")),
         "regressed": bool(finding.get("regressed")),
     }
+    steps = _dataflow_steps(
+        finding,
+        include_snippet=include_snippet,
+        redact_secrets=redact_secrets,
+    )
+    if steps:
+        data["dataflow"] = steps
+        data["dataflow_steps"] = len(steps)
     if data["file"] is not None:
         data["location"] = f"{data['file']}:{data['line'] or 0}"
 
@@ -96,6 +132,8 @@ def aggregate_findings(
     file_severities: dict[str, Counter[str]] = defaultdict(Counter)
     rule_info: dict[str, dict[str, Any]] = {}
     rule_locations: dict[str, list[str]] = defaultdict(list)
+    rule_dataflow: Counter[str] = Counter()
+    dataflow_findings = 0
 
     for finding in findings:
         severity = str(finding.get("severity") or "info")
@@ -109,6 +147,9 @@ def aggregate_findings(
         by_file[file] += 1
         by_engine[str(finding.get("engine") or "unknown")] += 1
         file_severities[file][severity] += 1
+        if finding.get("dataflow"):
+            dataflow_findings += 1
+            rule_dataflow[rule_id] += 1
 
         if rule_id not in rule_info:
             rule_info[rule_id] = {
@@ -124,6 +165,7 @@ def aggregate_findings(
         {
             **rule_info[rule_id],
             "count": count,
+            "dataflow_count": rule_dataflow.get(rule_id, 0),
             "sample_locations": rule_locations[rule_id],
         }
         for rule_id, count in by_rule.most_common(top)
@@ -149,6 +191,13 @@ def aggregate_findings(
         "by_file": files,
         "by_language": language_risk["languages"],
         "language_risk_levels": language_risk["risk_levels"],
+        "dataflow": {
+            "findings_with_traces": dataflow_findings,
+            "by_rule": [
+                {"rule_id": rule_id, "count": count}
+                for rule_id, count in rule_dataflow.most_common(top)
+            ],
+        },
         "omitted_rule_groups": max(0, len(by_rule) - len(rules)),
         "omitted_file_groups": max(0, len(by_file) - len(files)),
     }

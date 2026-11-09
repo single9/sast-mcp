@@ -110,6 +110,8 @@ class Settings:
     semgrep_config: str | None
     semgrep_extra_configs: tuple[str, ...]
     semgrep_bin: str
+    semgrep_pro: bool
+    dataflow_traces: bool
     max_upload_mb: int
     max_extract_mb: int
     max_files: int
@@ -157,6 +159,8 @@ def get_settings() -> Settings:
         semgrep_config=semgrep_config,
         semgrep_extra_configs=_env_list("SAST_SEMGREP_EXTRA_CONFIGS"),
         semgrep_bin=os.environ.get("SAST_SEMGREP_BIN", "semgrep").strip() or "semgrep",
+        semgrep_pro=_env_bool("SAST_SEMGREP_PRO", False),
+        dataflow_traces=_env_bool("SAST_DATAFLOW_TRACES", True),
         max_upload_mb=_env_int("SAST_MAX_UPLOAD_MB", 50),
         max_extract_mb=_env_int("SAST_MAX_EXTRACT_MB", 200),
         max_files=_env_int("SAST_MAX_FILES", 20000),

@@ -290,3 +290,40 @@ def test_ui_pages_render(client: TestClient):
     assert "builtin-python-os-system" in detail.text
     assert "專案語言與風險" in detail.text
     assert "Python" in detail.text
+
+
+def test_dataflow_roundtrip_and_sarif():
+    from app.db import add_findings, create_scan, get_findings, get_scan, init_db
+    from app.models import DataflowStep, Finding
+    from app.sarif import scan_to_sarif
+
+    init_db()
+    create_scan("scan-dataflow", "zip", "source.zip")
+    finding = Finding(
+        rule_id="python-taint-command-injection",
+        severity="high",
+        message="command injection",
+        file="src/app.py",
+        line=5,
+        cwe=["CWE-78"],
+        engine="semgrep",
+        dataflow=[
+            DataflowStep(role="source", file="src/app.py", line=1, code="name = input()"),
+            DataflowStep(role="propagator", file="src/app.py", line=3, code="cmd = 'echo ' + name"),
+            DataflowStep(role="sink", file="src/app.py", line=5, code="os.system(cmd)"),
+        ],
+    )
+    add_findings("scan-dataflow", [finding])
+
+    loaded = get_findings("scan-dataflow")
+    assert len(loaded) == 1
+    assert [step.role for step in loaded[0].dataflow] == ["source", "propagator", "sink"]
+    assert loaded[0].dataflow[-1].code == "os.system(cmd)"
+
+    scan = get_scan("scan-dataflow")
+    sarif = scan_to_sarif(scan, loaded)
+    result = sarif["runs"][0]["results"][0]
+    assert result["properties"]["dataflowSteps"] == 3
+    locations = result["codeFlows"][0]["threadFlows"][0]["locations"]
+    assert [loc["location"]["physicalLocation"]["region"]["startLine"] for loc in locations] == [1, 3, 5]
+    assert "sink: os.system(cmd)" in locations[-1]["location"]["message"]["text"]

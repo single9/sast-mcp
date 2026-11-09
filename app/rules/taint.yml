@@ -1,0 +1,1067 @@
+rules:
+  # =====================================================================
+  # Taint 模式規則：追蹤 source → sink 的資料流。
+  #
+  # 這些規則和 default.yml / 各語言規則互補：
+  #   * pattern 規則只問「這裡有沒有危險 API」
+  #   * taint 規則額外要求「使用者可控資料是否真的流到這裡」
+  #
+  # Semgrep OSS 的 taint 分析以單一檔案、函式內為主；跨檔案／跨程序
+  # 的完整追蹤需要 Semgrep Pro（SAST_SEMGREP_PRO=true）。
+  # =====================================================================
+
+  # ===================== Python =====================
+  - id: python-taint-command-injection
+    mode: taint
+    languages: [python]
+    severity: ERROR
+    message: 使用者可控資料流入 shell／命令執行 API，可能造成命令注入（taint 追蹤）。
+    metadata:
+      cwe: ["CWE-78: Improper Neutralization of Special Elements used in an OS Command"]
+      category: security
+      confidence: MEDIUM
+      technology: [flask, django, fastapi]
+    pattern-sources:
+      - pattern-either:
+          - pattern: request.args.get(...)
+          - pattern: request.args[...]
+          - pattern: request.form.get(...)
+          - pattern: request.form[...]
+          - pattern: request.values.get(...)
+          - pattern: request.values[...]
+          - pattern: request.json.get(...)
+          - pattern: request.json[...]
+          - pattern: request.get_json(...)
+          - pattern: request.GET.get(...)
+          - pattern: request.GET[...]
+          - pattern: request.POST.get(...)
+          - pattern: request.POST[...]
+          - pattern: request.query_params.get(...)
+          - pattern: request.query_params[...]
+          - pattern: input(...)
+          - pattern: sys.argv[...]
+    pattern-sinks:
+      - patterns:
+          - pattern: os.system($CMD)
+          - focus-metavariable: $CMD
+      - patterns:
+          - pattern: os.popen($CMD, ...)
+          - focus-metavariable: $CMD
+      - patterns:
+          - pattern: subprocess.run($CMD, ..., shell=True, ...)
+          - focus-metavariable: $CMD
+      - patterns:
+          - pattern: subprocess.call($CMD, ..., shell=True, ...)
+          - focus-metavariable: $CMD
+      - patterns:
+          - pattern: subprocess.Popen($CMD, ..., shell=True, ...)
+          - focus-metavariable: $CMD
+      - patterns:
+          - pattern: subprocess.check_output($CMD, ..., shell=True, ...)
+          - focus-metavariable: $CMD
+      - patterns:
+          - pattern: subprocess.check_call($CMD, ..., shell=True, ...)
+          - focus-metavariable: $CMD
+    pattern-sanitizers:
+      - pattern-either:
+          - pattern: shlex.quote(...)
+          - pattern: int(...)
+          - pattern: float(...)
+          - pattern: bool(...)
+
+  - id: python-taint-sql-injection
+    mode: taint
+    languages: [python]
+    severity: ERROR
+    message: 使用者可控資料被拼進 SQL 語句，可能造成 SQL injection（taint 追蹤）。
+    metadata:
+      cwe: ["CWE-89: Improper Neutralization of Special Elements used in an SQL Command"]
+      category: security
+      confidence: MEDIUM
+      technology: [flask, django, fastapi]
+    pattern-sources:
+      - pattern-either:
+          - pattern: request.args.get(...)
+          - pattern: request.args[...]
+          - pattern: request.form.get(...)
+          - pattern: request.form[...]
+          - pattern: request.values.get(...)
+          - pattern: request.values[...]
+          - pattern: request.json.get(...)
+          - pattern: request.json[...]
+          - pattern: request.get_json(...)
+          - pattern: request.GET.get(...)
+          - pattern: request.GET[...]
+          - pattern: request.POST.get(...)
+          - pattern: request.POST[...]
+          - pattern: request.query_params.get(...)
+          - pattern: request.query_params[...]
+          - pattern: input(...)
+    pattern-sinks:
+      - patterns:
+          - pattern: $CUR.execute($QUERY, ...)
+          - focus-metavariable: $QUERY
+      - patterns:
+          - pattern: $CUR.executemany($QUERY, ...)
+          - focus-metavariable: $QUERY
+      - patterns:
+          - pattern: $CUR.executescript($QUERY)
+          - focus-metavariable: $QUERY
+      - patterns:
+          - pattern: sqlalchemy.text($QUERY)
+          - focus-metavariable: $QUERY
+    pattern-sanitizers:
+      - pattern-either:
+          - pattern: int(...)
+          - pattern: float(...)
+
+  - id: python-taint-path-traversal
+    mode: taint
+    languages: [python]
+    severity: ERROR
+    message: 使用者可控資料被當成檔案路徑，可能造成路徑穿越（taint 追蹤）。
+    metadata:
+      cwe: ["CWE-22: Improper Limitation of a Pathname to a Restricted Directory"]
+      category: security
+      confidence: MEDIUM
+      technology: [flask, django, fastapi]
+    pattern-sources:
+      - pattern-either:
+          - pattern: request.args.get(...)
+          - pattern: request.args[...]
+          - pattern: request.form.get(...)
+          - pattern: request.form[...]
+          - pattern: request.values.get(...)
+          - pattern: request.values[...]
+          - pattern: request.json.get(...)
+          - pattern: request.json[...]
+          - pattern: request.get_json(...)
+          - pattern: request.GET.get(...)
+          - pattern: request.GET[...]
+          - pattern: request.POST.get(...)
+          - pattern: request.POST[...]
+          - pattern: request.query_params.get(...)
+          - pattern: request.query_params[...]
+          - pattern: input(...)
+    pattern-sinks:
+      - patterns:
+          - pattern: open($PATH, ...)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: io.open($PATH, ...)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: Path($PATH).read_text(...)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: Path($PATH).read_bytes(...)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: shutil.copy($SRC, ...)
+          - focus-metavariable: $SRC
+      - patterns:
+          - pattern: shutil.move($SRC, ...)
+          - focus-metavariable: $SRC
+      - patterns:
+          - pattern: os.remove($PATH)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: send_file($PATH, ...)
+          - focus-metavariable: $PATH
+    pattern-sanitizers:
+      - pattern-either:
+          - pattern: os.path.basename(...)
+          - pattern: secure_filename(...)
+          - pattern: Path(...).name
+
+  - id: python-taint-ssrf
+    mode: taint
+    languages: [python]
+    severity: ERROR
+    message: 使用者可控資料被當成遠端 URL，可能造成 SSRF（taint 追蹤）。
+    metadata:
+      cwe: ["CWE-918: Server-Side Request Forgery"]
+      category: security
+      confidence: MEDIUM
+      technology: [flask, django, fastapi]
+    pattern-sources:
+      - pattern-either:
+          - pattern: request.args.get(...)
+          - pattern: request.args[...]
+          - pattern: request.form.get(...)
+          - pattern: request.form[...]
+          - pattern: request.values.get(...)
+          - pattern: request.values[...]
+          - pattern: request.json.get(...)
+          - pattern: request.json[...]
+          - pattern: request.get_json(...)
+          - pattern: request.GET.get(...)
+          - pattern: request.GET[...]
+          - pattern: request.POST.get(...)
+          - pattern: request.POST[...]
+          - pattern: request.query_params.get(...)
+          - pattern: request.query_params[...]
+    pattern-sinks:
+      - patterns:
+          - pattern: requests.get($URL, ...)
+          - focus-metavariable: $URL
+      - patterns:
+          - pattern: requests.post($URL, ...)
+          - focus-metavariable: $URL
+      - patterns:
+          - pattern: requests.request($METHOD, $URL, ...)
+          - focus-metavariable: $URL
+      - patterns:
+          - pattern: httpx.get($URL, ...)
+          - focus-metavariable: $URL
+      - patterns:
+          - pattern: httpx.post($URL, ...)
+          - focus-metavariable: $URL
+      - patterns:
+          - pattern: urllib.request.urlopen($URL, ...)
+          - focus-metavariable: $URL
+
+  - id: python-taint-xss
+    mode: taint
+    languages: [python]
+    severity: ERROR
+    message: 使用者可控資料未經逃逸就輸出到 HTML，可能造成 XSS（taint 追蹤）。
+    metadata:
+      cwe: ["CWE-79: Improper Neutralization of Input During Web Page Generation"]
+      category: security
+      confidence: MEDIUM
+      technology: [flask, django]
+    pattern-sources:
+      - pattern-either:
+          - pattern: request.args.get(...)
+          - pattern: request.args[...]
+          - pattern: request.form.get(...)
+          - pattern: request.form[...]
+          - pattern: request.values.get(...)
+          - pattern: request.values[...]
+          - pattern: request.json.get(...)
+          - pattern: request.json[...]
+          - pattern: request.get_json(...)
+          - pattern: request.GET.get(...)
+          - pattern: request.GET[...]
+          - pattern: request.POST.get(...)
+          - pattern: request.POST[...]
+    pattern-sinks:
+      - patterns:
+          - pattern: Markup($X)
+          - focus-metavariable: $X
+      - patterns:
+          - pattern: markupsafe.Markup($X)
+          - focus-metavariable: $X
+      - patterns:
+          - pattern: render_template_string($X, ...)
+          - focus-metavariable: $X
+      - patterns:
+          - pattern: HttpResponse($X, ...)
+          - focus-metavariable: $X
+    pattern-sanitizers:
+      - pattern-either:
+          - pattern: markupsafe.escape(...)
+          - pattern: html.escape(...)
+          - pattern: bleach.clean(...)
+          - pattern: escape(...)
+
+  - id: python-taint-code-injection
+    mode: taint
+    languages: [python]
+    severity: ERROR
+    message: 使用者可控資料被當成程式碼執行，可能造成遠端程式碼執行（taint 追蹤）。
+    metadata:
+      cwe: ["CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code"]
+      category: security
+      confidence: MEDIUM
+    pattern-sources:
+      - pattern-either:
+          - pattern: request.args.get(...)
+          - pattern: request.args[...]
+          - pattern: request.form.get(...)
+          - pattern: request.form[...]
+          - pattern: request.values.get(...)
+          - pattern: request.values[...]
+          - pattern: request.json.get(...)
+          - pattern: request.json[...]
+          - pattern: request.get_json(...)
+          - pattern: input(...)
+          - pattern: sys.argv[...]
+    pattern-sinks:
+      - patterns:
+          - pattern: eval($CODE)
+          - focus-metavariable: $CODE
+      - patterns:
+          - pattern: exec($CODE)
+          - focus-metavariable: $CODE
+
+  # ===================== JavaScript / TypeScript =====================
+  - id: js-taint-command-injection
+    mode: taint
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: 使用者可控資料流入 shell／命令執行 API，可能造成命令注入（taint 追蹤）。
+    metadata:
+      cwe: ["CWE-78: Improper Neutralization of Special Elements used in an OS Command"]
+      category: security
+      confidence: MEDIUM
+      technology: [express, node]
+    pattern-sources:
+      - pattern-either:
+          - pattern: req.query[...]
+          - pattern: req.query.$KEY
+          - pattern: req.body[...]
+          - pattern: req.body.$KEY
+          - pattern: req.params[...]
+          - pattern: req.params.$KEY
+          - pattern: req.headers[...]
+          - pattern: req.cookies[...]
+          - pattern: request.query[...]
+          - pattern: request.body[...]
+          - pattern: request.params[...]
+          - pattern: location.search
+          - pattern: location.hash
+          - pattern: document.URL
+          - pattern: document.referrer
+          - pattern: process.argv[...]
+    pattern-sinks:
+      - patterns:
+          - pattern: child_process.exec($CMD, ...)
+          - focus-metavariable: $CMD
+      - patterns:
+          - pattern: child_process.execSync($CMD, ...)
+          - focus-metavariable: $CMD
+      - patterns:
+          - pattern: require("child_process").exec($CMD, ...)
+          - focus-metavariable: $CMD
+      - patterns:
+          - pattern: require("child_process").execSync($CMD, ...)
+          - focus-metavariable: $CMD
+      - patterns:
+          - pattern: "child_process.spawn($CMD, ..., {shell: true, ...})"
+          - focus-metavariable: $CMD
+      - patterns:
+          - pattern: "child_process.execFile($CMD, ..., {shell: true, ...})"
+          - focus-metavariable: $CMD
+    pattern-sanitizers:
+      - pattern-either:
+          - pattern: parseInt(...)
+          - pattern: parseFloat(...)
+          - pattern: Number(...)
+
+  - id: js-taint-sql-injection
+    mode: taint
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: 使用者可控資料被拼進 SQL 語句，可能造成 SQL injection（taint 追蹤）。
+    metadata:
+      cwe: ["CWE-89: Improper Neutralization of Special Elements used in an SQL Command"]
+      category: security
+      confidence: MEDIUM
+      technology: [express, node]
+    pattern-sources:
+      - pattern-either:
+          - pattern: req.query[...]
+          - pattern: req.query.$KEY
+          - pattern: req.body[...]
+          - pattern: req.body.$KEY
+          - pattern: req.params[...]
+          - pattern: req.params.$KEY
+          - pattern: request.query[...]
+          - pattern: request.body[...]
+          - pattern: request.params[...]
+    pattern-sinks:
+      - patterns:
+          - pattern: $DB.query($SQL, ...)
+          - focus-metavariable: $SQL
+      - patterns:
+          - pattern: $DB.execute($SQL, ...)
+          - focus-metavariable: $SQL
+      - patterns:
+          - pattern: $DB.prepare($SQL, ...)
+          - focus-metavariable: $SQL
+      - patterns:
+          - pattern: knex.raw($SQL, ...)
+          - focus-metavariable: $SQL
+      - patterns:
+          - pattern: sequelize.query($SQL, ...)
+          - focus-metavariable: $SQL
+    pattern-sanitizers:
+      - pattern-either:
+          - pattern: parseInt(...)
+          - pattern: Number(...)
+
+  - id: js-taint-xss
+    mode: taint
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: 使用者可控資料未經消毒就寫入 HTML，可能造成 XSS（taint 追蹤）。
+    metadata:
+      cwe: ["CWE-79: Improper Neutralization of Input During Web Page Generation"]
+      category: security
+      confidence: MEDIUM
+      technology: [express, react, node]
+    pattern-sources:
+      - pattern-either:
+          - pattern: req.query[...]
+          - pattern: req.query.$KEY
+          - pattern: req.body[...]
+          - pattern: req.body.$KEY
+          - pattern: req.params[...]
+          - pattern: req.params.$KEY
+          - pattern: location.search
+          - pattern: location.hash
+          - pattern: document.URL
+          - pattern: document.referrer
+    pattern-sinks:
+      - patterns:
+          - pattern: $EL.innerHTML = $X
+          - focus-metavariable: $X
+      - patterns:
+          - pattern: $EL.outerHTML = $X
+          - focus-metavariable: $X
+      - patterns:
+          - pattern: document.write($X)
+          - focus-metavariable: $X
+      - patterns:
+          - pattern: document.writeln($X)
+          - focus-metavariable: $X
+      - patterns:
+          - pattern: $EL.insertAdjacentHTML($POS, $X)
+          - focus-metavariable: $X
+      - patterns:
+          - pattern: $RES.send($X)
+          - focus-metavariable: $X
+      - patterns:
+          - pattern: $RES.write($X)
+          - focus-metavariable: $X
+      - patterns:
+          - pattern: $RES.end($X)
+          - focus-metavariable: $X
+    pattern-sanitizers:
+      - pattern-either:
+          - pattern: DOMPurify.sanitize(...)
+          - pattern: sanitizeHtml(...)
+          - pattern: escapeHtml(...)
+
+  - id: js-taint-path-traversal
+    mode: taint
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: 使用者可控資料被當成檔案路徑，可能造成路徑穿越（taint 追蹤）。
+    metadata:
+      cwe: ["CWE-22: Improper Limitation of a Pathname to a Restricted Directory"]
+      category: security
+      confidence: MEDIUM
+      technology: [express, node]
+    pattern-sources:
+      - pattern-either:
+          - pattern: req.query[...]
+          - pattern: req.query.$KEY
+          - pattern: req.body[...]
+          - pattern: req.body.$KEY
+          - pattern: req.params[...]
+          - pattern: req.params.$KEY
+          - pattern: request.query[...]
+          - pattern: request.body[...]
+          - pattern: request.params[...]
+    pattern-sinks:
+      - patterns:
+          - pattern: fs.readFile($PATH, ...)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: fs.readFileSync($PATH, ...)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: fs.createReadStream($PATH, ...)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: fs.writeFile($PATH, ...)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: fs.writeFileSync($PATH, ...)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: res.sendFile($PATH, ...)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: res.download($PATH, ...)
+          - focus-metavariable: $PATH
+    pattern-sanitizers:
+      - pattern-either:
+          - pattern: path.basename(...)
+          - pattern: path.resolve(...)
+
+  - id: js-taint-ssrf
+    mode: taint
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: 使用者可控資料被當成遠端 URL，可能造成 SSRF（taint 追蹤）。
+    metadata:
+      cwe: ["CWE-918: Server-Side Request Forgery"]
+      category: security
+      confidence: MEDIUM
+      technology: [express, node]
+    pattern-sources:
+      - pattern-either:
+          - pattern: req.query[...]
+          - pattern: req.query.$KEY
+          - pattern: req.body[...]
+          - pattern: req.body.$KEY
+          - pattern: req.params[...]
+          - pattern: req.params.$KEY
+          - pattern: request.query[...]
+          - pattern: request.body[...]
+          - pattern: request.params[...]
+    pattern-sinks:
+      - patterns:
+          - pattern: fetch($URL, ...)
+          - focus-metavariable: $URL
+      - patterns:
+          - pattern: axios.get($URL, ...)
+          - focus-metavariable: $URL
+      - patterns:
+          - pattern: axios.post($URL, ...)
+          - focus-metavariable: $URL
+      - patterns:
+          - pattern: axios($URL, ...)
+          - focus-metavariable: $URL
+      - patterns:
+          - pattern: http.get($URL, ...)
+          - focus-metavariable: $URL
+      - patterns:
+          - pattern: https.get($URL, ...)
+          - focus-metavariable: $URL
+
+  - id: js-taint-code-injection
+    mode: taint
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: 使用者可控資料被當成程式碼執行，可能造成遠端程式碼執行（taint 追蹤）。
+    metadata:
+      cwe: ["CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code"]
+      category: security
+      confidence: MEDIUM
+    pattern-sources:
+      - pattern-either:
+          - pattern: req.query[...]
+          - pattern: req.query.$KEY
+          - pattern: req.body[...]
+          - pattern: req.body.$KEY
+          - pattern: req.params[...]
+          - pattern: req.params.$KEY
+          - pattern: location.search
+          - pattern: location.hash
+          - pattern: document.URL
+          - pattern: process.argv[...]
+    pattern-sinks:
+      - patterns:
+          - pattern: eval($CODE)
+          - focus-metavariable: $CODE
+      - patterns:
+          - pattern: new Function($CODE, ...)
+          - focus-metavariable: $CODE
+      - patterns:
+          - pattern: vm.runInNewContext($CODE, ...)
+          - focus-metavariable: $CODE
+      - patterns:
+          - pattern: vm.runInThisContext($CODE, ...)
+          - focus-metavariable: $CODE
+      - patterns:
+          - pattern: vm.runInContext($CODE, ...)
+          - focus-metavariable: $CODE
+
+  # ===================== Java =====================
+  - id: java-taint-command-injection
+    mode: taint
+    languages: [java]
+    severity: ERROR
+    message: 使用者可控資料流入命令執行 API，可能造成命令注入（taint 追蹤）。
+    metadata:
+      cwe: ["CWE-78: Improper Neutralization of Special Elements used in an OS Command"]
+      category: security
+      confidence: MEDIUM
+    pattern-sources:
+      - pattern-either:
+          - pattern: $REQ.getParameter(...)
+          - pattern: $REQ.getHeader(...)
+          - pattern: $REQ.getQueryString()
+          - pattern: $REQ.getPathInfo()
+          - pattern: $REQ.getInputStream()
+          - pattern: $REQ.getReader()
+    pattern-sinks:
+      - patterns:
+          - pattern: Runtime.getRuntime().exec($CMD)
+          - focus-metavariable: $CMD
+      - patterns:
+          - pattern: new ProcessBuilder($CMD)
+          - focus-metavariable: $CMD
+      - patterns:
+          - pattern: $PB.command($CMD)
+          - focus-metavariable: $CMD
+    pattern-sanitizers:
+      - pattern-either:
+          - pattern: Integer.parseInt(...)
+          - pattern: Long.parseLong(...)
+          - pattern: Double.parseDouble(...)
+
+  - id: java-taint-sql-injection
+    mode: taint
+    languages: [java]
+    severity: ERROR
+    message: 使用者可控資料被拼進 SQL 語句，可能造成 SQL injection（taint 追蹤）。
+    metadata:
+      cwe: ["CWE-89: Improper Neutralization of Special Elements used in an SQL Command"]
+      category: security
+      confidence: MEDIUM
+    pattern-sources:
+      - pattern-either:
+          - pattern: $REQ.getParameter(...)
+          - pattern: $REQ.getHeader(...)
+          - pattern: $REQ.getQueryString()
+          - pattern: $REQ.getPathInfo()
+    pattern-sinks:
+      - patterns:
+          - pattern: $STMT.executeQuery($SQL)
+          - focus-metavariable: $SQL
+      - patterns:
+          - pattern: $STMT.executeUpdate($SQL)
+          - focus-metavariable: $SQL
+      - patterns:
+          - pattern: $STMT.execute($SQL)
+          - focus-metavariable: $SQL
+      - patterns:
+          - pattern: $STMT.addBatch($SQL)
+          - focus-metavariable: $SQL
+      - patterns:
+          - pattern: $EM.createQuery($SQL)
+          - focus-metavariable: $SQL
+      - patterns:
+          - pattern: $EM.createNativeQuery($SQL)
+          - focus-metavariable: $SQL
+      - patterns:
+          - pattern: $CONN.prepareStatement($SQL)
+          - focus-metavariable: $SQL
+    pattern-sanitizers:
+      - pattern-either:
+          - pattern: Integer.parseInt(...)
+          - pattern: Long.parseLong(...)
+
+  - id: java-taint-path-traversal
+    mode: taint
+    languages: [java]
+    severity: ERROR
+    message: 使用者可控資料被當成檔案路徑，可能造成路徑穿越（taint 追蹤）。
+    metadata:
+      cwe: ["CWE-22: Improper Limitation of a Pathname to a Restricted Directory"]
+      category: security
+      confidence: MEDIUM
+    pattern-sources:
+      - pattern-either:
+          - pattern: $REQ.getParameter(...)
+          - pattern: $REQ.getHeader(...)
+          - pattern: $REQ.getQueryString()
+          - pattern: $REQ.getPathInfo()
+    pattern-sinks:
+      - patterns:
+          - pattern: new File($PATH)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: Paths.get($PATH, ...)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: new FileInputStream($PATH)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: new FileOutputStream($PATH)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: Files.readAllBytes($PATH)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: Files.write($PATH, ...)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: Files.newInputStream($PATH, ...)
+          - focus-metavariable: $PATH
+    pattern-sanitizers:
+      - pattern-either:
+          - pattern: Paths.get(...).getFileName()
+          - pattern: new File(...).getName()
+
+  - id: java-taint-xss
+    mode: taint
+    languages: [java]
+    severity: ERROR
+    message: 使用者可控資料未經逃逸就寫入 HTTP 回應，可能造成 XSS（taint 追蹤）。
+    metadata:
+      cwe: ["CWE-79: Improper Neutralization of Input During Web Page Generation"]
+      category: security
+      confidence: MEDIUM
+    pattern-sources:
+      - pattern-either:
+          - pattern: $REQ.getParameter(...)
+          - pattern: $REQ.getHeader(...)
+          - pattern: $REQ.getQueryString()
+          - pattern: $REQ.getPathInfo()
+    pattern-sinks:
+      - patterns:
+          - pattern: $RESP.getWriter().write($X)
+          - focus-metavariable: $X
+      - patterns:
+          - pattern: $RESP.getWriter().println($X)
+          - focus-metavariable: $X
+      - patterns:
+          - pattern: $RESP.getWriter().print($X)
+          - focus-metavariable: $X
+    pattern-sanitizers:
+      - pattern-either:
+          - pattern: StringEscapeUtils.escapeHtml4(...)
+          - pattern: HtmlUtils.htmlEscape(...)
+          - pattern: Encode.forHtml(...)
+
+  # ===================== C# =====================
+  - id: csharp-taint-command-injection
+    mode: taint
+    languages: [csharp]
+    severity: ERROR
+    message: 使用者可控資料流入命令執行 API，可能造成命令注入（taint 追蹤）。
+    metadata:
+      cwe: ["CWE-78: Improper Neutralization of Special Elements used in an OS Command"]
+      category: security
+      confidence: MEDIUM
+      technology: [aspnet]
+    pattern-sources:
+      - pattern-either:
+          - pattern: Request.Query[...]
+          - pattern: Request.Form[...]
+          - pattern: Request.QueryString[...]
+          - pattern: Request.Headers[...]
+          - pattern: Request.Cookies[...]
+          - pattern: Console.ReadLine()
+          - pattern: args[...]
+    pattern-sinks:
+      - patterns:
+          - pattern: Process.Start($CMD)
+          - focus-metavariable: $CMD
+      - patterns:
+          - pattern: new ProcessStartInfo($CMD)
+          - focus-metavariable: $CMD
+      - patterns:
+          - pattern: $PSI.FileName = $CMD
+          - focus-metavariable: $CMD
+    pattern-sanitizers:
+      - pattern-either:
+          - pattern: int.Parse(...)
+          - pattern: int.TryParse(...)
+          - pattern: Convert.ToInt32(...)
+
+  - id: csharp-taint-sql-injection
+    mode: taint
+    languages: [csharp]
+    severity: ERROR
+    message: 使用者可控資料被拼進 SQL 語句，可能造成 SQL injection（taint 追蹤）。
+    metadata:
+      cwe: ["CWE-89: Improper Neutralization of Special Elements used in an SQL Command"]
+      category: security
+      confidence: MEDIUM
+      technology: [aspnet]
+    pattern-sources:
+      - pattern-either:
+          - pattern: Request.Query[...]
+          - pattern: Request.Form[...]
+          - pattern: Request.QueryString[...]
+          - pattern: Request.Headers[...]
+          - pattern: Request.Cookies[...]
+          - pattern: Console.ReadLine()
+          - pattern: args[...]
+    pattern-sinks:
+      - patterns:
+          - pattern: new SqlCommand($SQL, ...)
+          - focus-metavariable: $SQL
+      - patterns:
+          - pattern: new SqlCommand($SQL)
+          - focus-metavariable: $SQL
+      - patterns:
+          - pattern: $CMD.CommandText = $SQL
+          - focus-metavariable: $SQL
+    pattern-sanitizers:
+      - pattern-either:
+          - pattern: int.Parse(...)
+          - pattern: int.TryParse(...)
+          - pattern: Convert.ToInt32(...)
+
+  - id: csharp-taint-path-traversal
+    mode: taint
+    languages: [csharp]
+    severity: ERROR
+    message: 使用者可控資料被當成檔案路徑，可能造成路徑穿越（taint 追蹤）。
+    metadata:
+      cwe: ["CWE-22: Improper Limitation of a Pathname to a Restricted Directory"]
+      category: security
+      confidence: MEDIUM
+      technology: [aspnet]
+    pattern-sources:
+      - pattern-either:
+          - pattern: Request.Query[...]
+          - pattern: Request.Form[...]
+          - pattern: Request.QueryString[...]
+          - pattern: Request.Headers[...]
+          - pattern: Request.Cookies[...]
+          - pattern: Console.ReadLine()
+          - pattern: args[...]
+    pattern-sinks:
+      - patterns:
+          - pattern: File.ReadAllText($PATH, ...)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: System.IO.File.ReadAllText($PATH, ...)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: File.ReadAllBytes($PATH)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: System.IO.File.ReadAllBytes($PATH)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: File.Open($PATH, ...)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: System.IO.File.Open($PATH, ...)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: File.OpenRead($PATH)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: System.IO.File.OpenRead($PATH)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: File.WriteAllText($PATH, ...)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: System.IO.File.WriteAllText($PATH, ...)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: new StreamReader($PATH)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: new System.IO.StreamReader($PATH)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: new FileStream($PATH, ...)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: new System.IO.FileStream($PATH, ...)
+          - focus-metavariable: $PATH
+    pattern-sanitizers:
+      - pattern-either:
+          - pattern: Path.GetFileName(...)
+          - pattern: Path.GetFileNameWithoutExtension(...)
+
+  - id: csharp-taint-xss
+    mode: taint
+    languages: [csharp]
+    severity: ERROR
+    message: 使用者可控資料未經編碼就寫入 HTTP 回應，可能造成 XSS（taint 追蹤）。
+    metadata:
+      cwe: ["CWE-79: Improper Neutralization of Input During Web Page Generation"]
+      category: security
+      confidence: MEDIUM
+      technology: [aspnet]
+    pattern-sources:
+      - pattern-either:
+          - pattern: Request.Query[...]
+          - pattern: Request.Form[...]
+          - pattern: Request.QueryString[...]
+          - pattern: Request.Headers[...]
+          - pattern: Request.Cookies[...]
+    pattern-sinks:
+      - patterns:
+          - pattern: Response.Write($X)
+          - focus-metavariable: $X
+      - patterns:
+          - pattern: Html.Raw($X)
+          - focus-metavariable: $X
+    pattern-sanitizers:
+      - pattern-either:
+          - pattern: Html.Encode(...)
+          - pattern: HttpUtility.HtmlEncode(...)
+          - pattern: WebUtility.HtmlEncode(...)
+
+  # ===================== C / C++ =====================
+  - id: c-taint-command-injection
+    mode: taint
+    languages: [c, cpp]
+    severity: ERROR
+    message: 環境變數或命令列參數流入命令執行 API，可能造成命令注入（taint 追蹤）。
+    metadata:
+      cwe: ["CWE-78: Improper Neutralization of Special Elements used in an OS Command"]
+      category: security
+      confidence: LOW
+    pattern-sources:
+      - pattern-either:
+          - pattern: getenv(...)
+          - pattern: argv[$I]
+    pattern-sinks:
+      - patterns:
+          - pattern: system($CMD)
+          - focus-metavariable: $CMD
+      - patterns:
+          - pattern: popen($CMD, ...)
+          - focus-metavariable: $CMD
+      - patterns:
+          - pattern: execl($CMD, ...)
+          - focus-metavariable: $CMD
+      - patterns:
+          - pattern: execv($CMD, ...)
+          - focus-metavariable: $CMD
+      - patterns:
+          - pattern: execvp($CMD, ...)
+          - focus-metavariable: $CMD
+
+  - id: c-taint-path-traversal
+    mode: taint
+    languages: [c, cpp]
+    severity: ERROR
+    message: 環境變數或命令列參數被當成檔案路徑，可能造成路徑穿越（taint 追蹤）。
+    metadata:
+      cwe: ["CWE-22: Improper Limitation of a Pathname to a Restricted Directory"]
+      category: security
+      confidence: LOW
+    pattern-sources:
+      - pattern-either:
+          - pattern: getenv(...)
+          - pattern: argv[$I]
+    pattern-sinks:
+      - patterns:
+          - pattern: fopen($PATH, ...)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: open($PATH, ...)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: unlink($PATH)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: remove($PATH)
+          - focus-metavariable: $PATH
+
+  - id: c-taint-format-string
+    mode: taint
+    languages: [c, cpp]
+    severity: ERROR
+    message: 環境變數或命令列參數被當成 printf 格式字串，可能造成格式字串漏洞（taint 追蹤）。
+    metadata:
+      cwe: ["CWE-134: Use of Externally-Controlled Format String"]
+      category: security
+      confidence: LOW
+    pattern-sources:
+      - pattern-either:
+          - pattern: getenv(...)
+          - pattern: argv[$I]
+    pattern-sinks:
+      - patterns:
+          - pattern: printf($FMT, ...)
+          - focus-metavariable: $FMT
+      - patterns:
+          - pattern: fprintf($OUT, $FMT, ...)
+          - focus-metavariable: $FMT
+      - patterns:
+          - pattern: sprintf($BUF, $FMT, ...)
+          - focus-metavariable: $FMT
+      - patterns:
+          - pattern: snprintf($BUF, $N, $FMT, ...)
+          - focus-metavariable: $FMT
+      - patterns:
+          - pattern: syslog($PRI, $FMT, ...)
+          - focus-metavariable: $FMT
+
+  # ===================== Rust =====================
+  - id: rust-taint-command-injection
+    mode: taint
+    languages: [rust]
+    severity: ERROR
+    message: 環境變數或命令列參數流入 Command，可能造成命令注入（taint 追蹤）。
+    metadata:
+      cwe: ["CWE-78: Improper Neutralization of Special Elements used in an OS Command"]
+      category: security
+      confidence: LOW
+    pattern-sources:
+      - pattern-either:
+          - pattern: std::env::args()
+          - pattern: std::env::args_os()
+          - pattern: std::env::var(...)
+          - pattern: std::env::var_os(...)
+    pattern-sinks:
+      - patterns:
+          - pattern: std::process::Command::new($CMD)
+          - focus-metavariable: $CMD
+      - patterns:
+          - pattern: Command::new($CMD)
+          - focus-metavariable: $CMD
+      - patterns:
+          - pattern: std::process::Command::new("sh").arg("-c").arg($ARG)
+          - focus-metavariable: $ARG
+      - patterns:
+          - pattern: Command::new("sh").arg("-c").arg($ARG)
+          - focus-metavariable: $ARG
+
+  - id: rust-taint-path-traversal
+    mode: taint
+    languages: [rust]
+    severity: ERROR
+    message: 環境變數或命令列參數被當成檔案路徑，可能造成路徑穿越（taint 追蹤）。
+    metadata:
+      cwe: ["CWE-22: Improper Limitation of a Pathname to a Restricted Directory"]
+      category: security
+      confidence: LOW
+    pattern-sources:
+      - pattern-either:
+          - pattern: std::env::args()
+          - pattern: std::env::args_os()
+          - pattern: std::env::var(...)
+          - pattern: std::env::var_os(...)
+    pattern-sinks:
+      - patterns:
+          - pattern: std::fs::read($PATH)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: std::fs::read_to_string($PATH)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: std::fs::File::open($PATH)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: File::open($PATH)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: std::fs::write($PATH, ...)
+          - focus-metavariable: $PATH
+      - patterns:
+          - pattern: fs::write($PATH, ...)
+          - focus-metavariable: $PATH
+
+  - id: rust-taint-sql-injection
+    mode: taint
+    languages: [rust]
+    severity: ERROR
+    message: 環境變數或命令列參數被拼進 SQL 語句，可能造成 SQL injection（taint 追蹤）。
+    metadata:
+      cwe: ["CWE-89: Improper Neutralization of Special Elements used in an SQL Command"]
+      category: security
+      confidence: LOW
+    pattern-sources:
+      - pattern-either:
+          - pattern: std::env::args()
+          - pattern: std::env::var(...)
+    pattern-sinks:
+      - patterns:
+          - pattern: sqlx::query($SQL)
+          - focus-metavariable: $SQL
+      - patterns:
+          - pattern: diesel::sql_query($SQL)
+          - focus-metavariable: $SQL
+      - patterns:
+          - pattern: $CONN.execute($SQL, ...)
+          - focus-metavariable: $SQL

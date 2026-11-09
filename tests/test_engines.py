@@ -262,3 +262,196 @@ def test_builtin_rust_rules_detect_patterns(monkeypatch, tmp_path):
         "rust-unsafe-block",
     } <= rule_ids
 
+
+
+def test_parse_json_dataflow_trace(tmp_path):
+    from app.engines.semgrep_engine import _parse_json_dataflow
+
+    (tmp_path / "app.py").write_text(
+        "user = request.args.get('name')\ncmd = 'echo ' + user\nos.system(cmd)\n",
+        encoding="utf-8",
+    )
+    trace = {
+        "taint_source": [
+            "CliLoc",
+            [
+                {
+                    "path": "app.py",
+                    "start": {"line": 1, "col": 8},
+                    "end": {"line": 1, "col": 34},
+                },
+                "request.args.get('name')",
+            ],
+        ],
+        "intermediate_vars": [
+            {
+                "location": {
+                    "path": "app.py",
+                    "start": {"line": 2, "col": 1},
+                    "end": {"line": 2, "col": 4},
+                },
+                "content": "cmd",
+            }
+        ],
+        "taint_sink": [
+            "CliLoc",
+            [
+                {
+                    "path": "app.py",
+                    "start": {"line": 3, "col": 11},
+                    "end": {"line": 3, "col": 14},
+                },
+                "cmd",
+            ],
+        ],
+    }
+
+    steps = _parse_json_dataflow(trace, tmp_path)
+
+    assert [step.role for step in steps] == ["source", "propagator", "sink"]
+    assert [step.line for step in steps] == [1, 2, 3]
+    assert steps[0].code == "request.args.get('name')"
+    assert steps[1].code == "cmd"
+    assert steps[2].file == "app.py"
+
+
+def test_parse_text_dataflow_output(tmp_path):
+    from app.engines.semgrep_engine import _parse_text_dataflow
+
+    (tmp_path / "app.py").write_text("x\n", encoding="utf-8")
+    output = """\
+    app.py
+   ❯❯❱ python-taint-command-injection
+          ❰❰ Blocking ❱❱
+          message
+
+            4┆ user = request.args.get("name")
+            5┆ cmd = "echo " + user
+            6┆ os.system(cmd)
+
+          Taint comes from:
+
+            4┆ user = request.args.get("name")
+
+          Taint flows through these intermediate variables:
+
+            5┆ cmd = "echo " + user
+
+                This is how taint reaches the sink:
+
+            6┆ os.system(cmd)
+
+            ⋮┆----------------------------------------
+"""
+    traces = _parse_text_dataflow(output, tmp_path)
+
+    steps = traces[("python-taint-command-injection", "app.py", 6)]
+    assert [step.role for step in steps] == ["source", "propagator", "sink"]
+    assert [step.line for step in steps] == [4, 5, 6]
+    assert steps[-1].code == "os.system(cmd)"
+
+
+def test_semgrep_engine_backfills_dataflow_from_text_output(monkeypatch, tmp_path):
+    """JSON 沒有 dataflow_trace 時，要用 --text --dataflow-traces 補上。"""
+    from app.config import reset_settings_cache
+
+    (tmp_path / "app.py").write_text(
+        "import os\nfrom flask import request\nname = request.args.get('name')\nos.system('echo ' + name)\n",
+        encoding="utf-8",
+    )
+    payload = {
+        "results": [
+            {
+                "check_id": "python-taint-command-injection",
+                "path": "app.py",
+                "start": {"line": 4, "col": 1},
+                "end": {"line": 4, "col": 28},
+                "extra": {"message": "command injection", "severity": "ERROR"},
+            }
+        ],
+        "errors": [],
+        "paths": {"scanned": ["app.py"]},
+    }
+    text_output = """\
+    app.py
+   ❯❯❱ python-taint-command-injection
+          ❰❰ Blocking ❱❱
+          command injection
+
+          Taint comes from:
+
+            3┆ name = request.args.get('name')
+
+                This is how taint reaches the sink:
+
+            4┆ os.system('echo ' + name)
+
+            ⋮┆----------------------------------------
+"""
+    fake = tmp_path / "fake-semgrep"
+    fake.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, sys\n"
+        "if '--version' in sys.argv:\n"
+        "    print('1.99.0')\n"
+        "    raise SystemExit(0)\n"
+        "if '--text' in sys.argv:\n"
+        f"    print({text_output!r})\n"
+        "    raise SystemExit(0)\n"
+        f"print({json.dumps(json.dumps(payload))})\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+
+    monkeypatch.setenv("SAST_SEMGREP_BIN", str(fake))
+    monkeypatch.setenv("SAST_DATAFLOW_TRACES", "true")
+    reset_settings_cache()
+    try:
+        result = SemgrepEngine().scan(tmp_path, timeout=30)
+    finally:
+        reset_settings_cache()
+
+    assert len(result.findings) == 1
+    steps = result.findings[0].dataflow
+    assert [step.role for step in steps] == ["source", "sink"]
+    assert [step.line for step in steps] == [3, 4]
+    assert steps[0].code == "name = request.args.get('name')"
+
+
+def test_parse_text_dataflow_handles_multiple_files(tmp_path):
+    """每個檔案的最後一筆 finding 不會印 ⋮┆，仍要正確切換檔案。"""
+    from app.engines.semgrep_engine import _parse_text_dataflow
+
+    (tmp_path / "a.py").write_text("x\n", encoding="utf-8")
+    (tmp_path / "b.py").write_text("x\n", encoding="utf-8")
+    output = """\
+    a.py
+   ❯❯❱ python-taint-command-injection
+          ❰❰ Blocking ❱❱
+          message
+
+          Taint comes from:
+
+            2┆ name = input()
+
+                This is how taint reaches the sink:
+
+            3┆ os.system(name)
+
+    b.py
+   ❯❯❱ python-taint-sql-injection
+          ❰❰ Blocking ❱❱
+          message
+
+          Taint comes from:
+
+            5┆ name = input()
+
+                This is how taint reaches the sink:
+
+            6┆ cur.execute(name)
+"""
+    traces = _parse_text_dataflow(output, tmp_path)
+
+    assert ("python-taint-command-injection", "a.py", 3) in traces
+    assert ("python-taint-sql-injection", "b.py", 6) in traces

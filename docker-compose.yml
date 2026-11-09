@@ -28,6 +28,10 @@ services:
       SAST_OSV_MAX_PACKAGES: ${SAST_OSV_MAX_PACKAGES:-1000}
       # build.rs、.cargo 設定、git 依賴 pin、萬用版本、Cargo patch
       SAST_SUPPLY_CHAIN_ENABLED: ${SAST_SUPPLY_CHAIN_ENABLED:-true}
+      # Semgrep taint 追蹤：finding 會附上 source → propagator → sink 路徑
+      SAST_DATAFLOW_TRACES: ${SAST_DATAFLOW_TRACES:-true}
+      # 跨檔案／跨程序 taint 需要 Semgrep Pro（--pro）與有效 token
+      SAST_SEMGREP_PRO: ${SAST_SEMGREP_PRO:-false}
     volumes:
       # 沿用專案內既有資料（SQLite、掃描工作區）
       - ./data:/data

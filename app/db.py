@@ -10,7 +10,7 @@ from typing import Iterator, Sequence
 
 from .config import SUPPRESSED_TRIAGE_STATUSES, get_settings
 from .languages import aggregate_language_risk
-from .models import Finding, ScanOut, count_by_severity
+from .models import DataflowStep, Finding, ScanOut, count_by_severity
 from .triage import fingerprint_for_values, triage_summary
 
 SCHEMA = """
@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS findings (
     cwe      TEXT,
     engine   TEXT,
     snippet  TEXT,
+    dataflow TEXT,
     fingerprint   TEXT,
     triage_status TEXT,
     triage_note   TEXT,
@@ -108,6 +109,7 @@ def init_db() -> None:
         # 既有資料庫沒有新欄位，補上（SQLite 的 ALTER TABLE 只支援 ADD COLUMN）。
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(findings)")}
         additions = {
+            "dataflow": "TEXT",
             "fingerprint": "TEXT",
             "triage_status": "TEXT",
             "triage_note": "TEXT",
@@ -196,6 +198,9 @@ def add_findings(scan_id: str, findings: Sequence[Finding]) -> None:
             json.dumps(finding.cwe, ensure_ascii=False),
             finding.engine,
             finding.snippet,
+            json.dumps([step.model_dump() for step in finding.dataflow], ensure_ascii=False)
+            if finding.dataflow
+            else None,
             finding.fingerprint,
             finding.triage_status,
             finding.triage_note,
@@ -209,8 +214,8 @@ def add_findings(scan_id: str, findings: Sequence[Finding]) -> None:
             """
             INSERT INTO findings
                 (scan_id, rule_id, severity, message, file, line, end_line, col, cwe, engine, snippet,
-                 fingerprint, triage_status, triage_note, suppressed, regressed)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 dataflow, fingerprint, triage_status, triage_note, suppressed, regressed)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
         )
@@ -270,6 +275,19 @@ def _to_finding(row: sqlite3.Row) -> Finding:
         cwe = json.loads(row["cwe"]) if row["cwe"] else []
     except json.JSONDecodeError:
         cwe = []
+    dataflow: list[DataflowStep] = []
+    if row["dataflow"]:
+        try:
+            parsed = json.loads(row["dataflow"])
+        except json.JSONDecodeError:
+            parsed = []
+        if isinstance(parsed, list):
+            for item in parsed:
+                if isinstance(item, dict):
+                    try:
+                        dataflow.append(DataflowStep.model_validate(item))
+                    except ValueError:
+                        continue
     return Finding(
         rule_id=row["rule_id"],
         severity=row["severity"],
@@ -281,6 +299,7 @@ def _to_finding(row: sqlite3.Row) -> Finding:
         cwe=cwe if isinstance(cwe, list) else [],
         engine=row["engine"] or "",
         snippet=row["snippet"],
+        dataflow=dataflow,
         fingerprint=row["fingerprint"],
         triage_status=row["triage_status"],
         triage_note=row["triage_note"],
@@ -529,6 +548,8 @@ def recompute_scan_stats(scan_id: str) -> None:
     stats["severity"] = count_by_severity(active)
     stats["triage"] = triage_summary(all_findings)
     stats["language_risk"] = aggregate_language_risk(active, stats.get("languages"))
+    if isinstance(stats.get("dataflow"), dict):
+        stats["dataflow"]["findings"] = sum(1 for finding in active if finding.dataflow)
 
     with connect() as conn:
         conn.execute(

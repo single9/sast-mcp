@@ -143,7 +143,8 @@ Use **either** systemd or a container runtime (Docker/Podman), not both. After i
 
 ## Features
 
-- **Detection engines**: Uses [Semgrep](https://semgrep.dev/) first (semantic rules; 73 built-in rules covering Rust, C#, C/C++, and Node.js). If Semgrep is unavailable, it automatically falls back to the built-in regex engine so the service still works. Rust scans also include OSV dependency vulnerabilities and Cargo supply-chain checks.
+- **Detection engines**: Uses [Semgrep](https://semgrep.dev/) first (semantic rules; 73 pattern rules plus 26 taint rules covering Rust, C#, C/C++, and Node.js). If Semgrep is unavailable, it automatically falls back to the built-in regex engine so the service still works. Rust scans also include OSV dependency vulnerabilities and Cargo supply-chain checks.
+- **Taint data flow**: Taint rules track attacker-controlled data from a source to a dangerous sink and record every intermediate step. Findings expose the path as `dataflow` in JSON, as `codeFlows` in SARIF, in the web UI, and through MCP. Semgrep OSS traces are intra-file; cross-file and inter-procedural tracing needs Semgrep Pro.
 - **Asynchronous jobs**: Scans run in the background; the API returns `202` immediately and you can poll for status.
 - **Result storage**: SQLite stores scans and findings; workspaces are kept under `data/workspaces/<scan_id>`.
 - **Language and risk classification**: After each scan, project languages are detected (file count, line count, percentage), and findings and risk levels are aggregated by language.
@@ -603,6 +604,8 @@ All settings are environment variables (see `.env.example`):
 | `SAST_SEMGREP_CONFIG` | built-in `app/rules` | Primary rule set; can be `p/default` (requires network) or a custom path |
 | `SAST_SEMGREP_EXTRA_CONFIGS` | `p/rust` in Compose | Additional rule sets, comma-separated, layered on top of the primary set (for example `p/rust,p/secrets`; registry packs require network and fall back to built-in rules on failure) |
 | `SAST_SEMGREP_BIN` | `semgrep` | Path to the Semgrep executable |
+| `SAST_DATAFLOW_TRACES` | `true` | Attach source → propagator → sink traces to taint findings; disable to shorten scans |
+| `SAST_SEMGREP_PRO` | `false` | Run Semgrep with `--pro` for cross-file taint; requires a valid `SEMGREP_APP_TOKEN` |
 | `SAST_MAX_UPLOAD_MB` | `50` | ZIP upload limit |
 | `SAST_MAX_EXTRACT_MB` | `200` | Total extracted size limit |
 | `SAST_MAX_FILES` | `20000` | Extracted file count limit |
@@ -637,7 +640,7 @@ MCP server settings (a separate process; see the second half of `.env.example`):
 
 ## Detection rules
 
-Built-in rules live in `app/rules/` (`default.yml`, `rust.yml`, `node.yml`, `c_cpp.yml`, `csharp.yml`, Semgrep) and cover:
+Built-in rules live in `app/rules/` (`default.yml`, `rust.yml`, `node.yml`, `c_cpp.yml`, `csharp.yml`, `taint.yml`, Semgrep) and cover:
 
 - Python: `eval` / `exec` / `os.system` / `subprocess(shell=True)` / pickle / `yaml.load` / weak hashes / SQL string concatenation / Flask debug / `verify=False`
 - JavaScript / TypeScript: `eval` / `new Function` / `innerHTML` / `dangerouslySetInnerHTML` / `document.write` / `child_process.exec` / SQL template strings
@@ -650,6 +653,32 @@ Built-in rules live in `app/rules/` (`default.yml`, `rust.yml`, `node.yml`, `c_c
 - Cross-language: private keys, AWS / Google / Slack tokens, credentials embedded in URLs, hardcoded passwords
 
 The built-in regex engine (`app/engines/regex_engine.py`) provides approximate equivalents; rule IDs start with `builtin-`. It does not perform semantic analysis and has a higher false-positive rate, making it suitable as a fallback or for quick checks.
+
+### Taint data flow
+
+`app/rules/taint.yml` adds 26 taint rules (`mode: taint`) for command injection, SQL injection, path traversal, SSRF, XSS, code injection, and C/C++ format strings. They cover Python, JavaScript/TypeScript, Java, C#, C/C++, and Rust.
+
+Each taint finding carries a `dataflow` list of steps:
+
+```json
+{
+  "role": "source",
+  "file": "src/app.py",
+  "line": 5,
+  "end_line": 5,
+  "column": 12,
+  "code": "request.args.get(\"name\")"
+}
+```
+
+`role` is `source`, `propagator`, or `sink`. The same steps appear in the scan UI, in SARIF `codeFlows` (so GitHub Code Scanning can render the path), and in MCP `get_findings` output. MCP omits step code unless `include_snippet=true`, and applies the same credential redaction as snippets.
+
+Limitations:
+
+- Semgrep OSS taint analysis is intra-file. A value that crosses function or module boundaries may be reported without a complete trace.
+- Cross-file and inter-procedural taint requires Semgrep Pro: set `SAST_SEMGREP_PRO=true` and provide a valid `SEMGREP_APP_TOKEN`.
+- JSON `dataflow_trace` is gated by Semgrep login in OSS. When it is unavailable, the engine runs a second `--text --dataflow-traces` pass over the affected files to recover the trace; if that also fails, the finding is still reported without `dataflow`.
+- Disable tracing with `SAST_DATAFLOW_TRACES=false` if scan time matters more than path detail.
 
 ### Dependencies and supply chain (Rust / Cargo)
 
@@ -791,7 +820,7 @@ Current limitations (trade-offs of a "basic" service):
 .venv/bin/pytest -q
 ```
 
-Tests cover: health checks, ZIP scanning and finding contents, severity filtering, SARIF, zip slip, non-ZIP uploads, Git URL validation, API keys, UI rendering, engine selection (including JSON conversion with a fake semgrep), MCP local packaging (Git-aware/symlinks), credential redaction, API client and tool surface, and triage (fingerprints, cross-scan suppression, inline ignore, export/import, legacy DB migration).
+Tests cover: health checks, ZIP scanning and finding contents, severity filtering, SARIF, zip slip, non-ZIP uploads, Git URL validation, API keys, UI rendering, engine selection (including JSON conversion with a fake semgrep), taint data flow parsing and DB/SARIF roundtrip, MCP local packaging (Git-aware/symlinks), credential redaction, API client and tool surface, and triage (fingerprints, cross-scan suppression, inline ignore, export/import, legacy DB migration).
 
 Validate Semgrep rules:
 

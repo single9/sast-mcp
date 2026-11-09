@@ -240,6 +240,20 @@
               triage：{{ triage_labels.get(finding.triage_status, finding.triage_status) }}{% if finding.triage_note %} · {{ finding.triage_note }}{% endif %}
             </p>
           {% endif %}
+          {% if finding.dataflow %}
+            <details>
+              <summary>資料流追蹤（{{ finding.dataflow|length }} 站）</summary>
+              <ol class="dataflow">
+                {% for step in finding.dataflow %}
+                <li class="dataflow-{{ step.role }}">
+                  <span class="dataflow-role">{{ {'source': '來源', 'propagator': '傳遞', 'sink': '危險操作'}.get(step.role, step.role) }}</span>
+                  <span class="mono">{{ step.file }}{% if step.line %}:{{ step.line }}{% endif %}</span>
+                  {% if step.code %}<pre class="snippet">{{ step.code }}</pre>{% endif %}
+                </li>
+                {% endfor %}
+              </ol>
+            </details>
+          {% endif %}
           {% if finding.snippet %}
             <details><summary>程式碼片段</summary><pre class="snippet">{{ finding.snippet }}</pre></details>
           {% endif %}
