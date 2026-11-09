@@ -12,16 +12,18 @@ The examples in this file are POSIX shell snippets. The portable path is the
 Python scripts in `scripts/`; they work on Linux, macOS, and Windows without
 `command -v`, `make`, `curl`, or a POSIX shell.
 
-- Docker Desktop (macOS/Windows) and Docker Engine with Compose (Linux) are both
-  supported. The service URL is always `http://127.0.0.1:8000`.
+- Docker Desktop (macOS/Windows), Docker Engine with Compose (Linux), and Podman
+  with `podman-compose` are supported. The service URL is always
+  `http://127.0.0.1:8000`.
 - Do not use `command -v docker` as the only check. Use
-  `scripts/agent_setup.py` (it uses `shutil.which`), or `Get-Command docker` in
-  PowerShell.
+  `scripts/agent_setup.py` (it uses `shutil.which`), or `Get-Command docker` /
+  `Get-Command podman` in PowerShell.
 - Virtualenv paths: POSIX `.venv/bin/python`; Windows
   `.venv\Scripts\python.exe`.
 - `make` targets are Unix-only. On Windows, run the Python scripts directly.
-- `scripts/agent_setup.py` accepts both Docker Compose v2 (`docker compose`) and
-  legacy `docker-compose`.
+- `scripts/agent_setup.py` detects Docker Compose v2 (`docker compose`), legacy
+  `docker-compose`, `podman compose`, and `podman-compose`. Docker is preferred
+  in `auto` mode; force Podman with `--runtime podman`.
 
 ## One-shot setup
 
@@ -30,11 +32,11 @@ configuration, do not discard local changes, and do not print secrets.
 
 ### Rules
 
-- **Docker is the only supported service deployment for agent setup.** If Docker is
-  available, use Docker. If Docker is not available, **do not** install or start the
-  systemd service, and do not start any other persistent service. Stop and tell the user
-  that Docker is required.
-- Never run Docker and systemd at the same time.
+- **Docker or Podman is the only supported service deployment for agent setup.** If
+  either runtime is available, use it. If neither is available, **do not** install or
+  start the systemd service, and do not start any other persistent service. Stop and tell
+  the user that Docker or Podman is required.
+- Never run a container runtime and systemd at the same time.
 - Do not commit `data/`, `reports/`, `.env`, databases, scan workspaces, or generated
   SARIF files.
 - Do not modify a project you are asked to scan unless the user explicitly approves it.
@@ -103,15 +105,21 @@ py -3 -m venv .venv
 `requirements-dev.txt` includes the MCP and test dependencies. If `python3 -m venv` fails,
 report the missing system package instead of installing OS packages without permission.
 
-### 4. Start the SAST service with Docker
+### 4. Start the SAST service with Docker or Podman
 
-Use the cross-platform bootstrap script. It checks Docker with `shutil.which`, supports
-both `docker compose` and `docker-compose`, starts the service, waits for `/health`, and
-installs the triage skill:
+Use the cross-platform bootstrap script. It detects Docker or Podman with
+`shutil.which`, supports `docker compose`, `docker-compose`, `podman compose`, and
+`podman-compose`, starts the service, waits for `/health`, and installs the triage skill:
 
 ```bash
 cd "$REPO_DIR"
 python3 scripts/agent_setup.py --wait-timeout 180
+```
+
+Force Podman when both runtimes are installed:
+
+```bash
+python3 scripts/agent_setup.py --runtime podman --wait-timeout 180
 ```
 
 Windows PowerShell:
@@ -121,8 +129,8 @@ cd $REPO_DIR
 py -3 scripts/agent_setup.py --wait-timeout 180
 ```
 
-If Docker or Compose is missing, the script exits with an error. Do not fall back to
-`make service-install` or any other service manager.
+If neither Docker nor Podman with Compose is available, the script exits with an error. Do
+not fall back to `make service-install` or any other service manager.
 
 If the service is already running and you only want to verify it, run:
 
@@ -278,8 +286,8 @@ unless the user explicitly approves showing raw values.
 
 | Symptom | Action |
 | --- | --- |
-| Docker or Compose is missing | Stop; do not start a systemd service. Tell the user Docker is required. |
-| `/health` never becomes ready | Check `docker compose logs --tail=100`; report the error. |
+| Docker/Podman or Compose is missing | Stop; do not start a systemd service. Tell the user Docker or Podman is required. |
+| `/health` never becomes ready | Check `docker compose logs --tail=100` or `podman compose logs --tail=100`; report the error. |
 | `ModuleNotFoundError: No module named 'sast_mcp'` | Set `PYTHONPATH` to the repository root in the MCP config. |
 | MCP client does not show `sast` | Reload or restart the client; check that the config JSON is valid. |
 | `Path is outside the allowed roots` | Adjust `SAST_MCP_ALLOWED_ROOTS` or scan a path under an allowed root. |

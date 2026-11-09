@@ -15,15 +15,15 @@
 
 1. Clone 到 ~/Development/sast；若已存在則 pull。
 2. 讀取 repo 內的 AGENTS.md，照「One-shot setup」章節執行。
-3. 如果有 Docker 和 Docker Compose，就用 Docker 啟動。若沒有 Docker，不要安裝或啟動
-   systemd 服務，也不要啟動其他常駐服務；停下來告訴我必須先安裝 Docker。
+3. 如果有 Docker 或 Podman（含 Compose），就用它啟動。若兩者都沒有，不要安裝或啟動
+   systemd 服務，也不要啟動其他常駐服務；停下來告訴我必須先安裝 Docker 或 Podman。
 4. 對我的客戶端全域註冊 `sast` MCP server、安裝 `sast-triage` Skill，並用 /health
    與客戶端的 MCP list 驗證。
 5. 不要覆蓋既有設定；用合併方式加入 `sast` 項目。
 6. 回報 repo 路徑、服務 URL、MCP 註冊狀態與 Skill 路徑。
 ```
 
-完整的 Agent 操作說明在 [`AGENTS.md`](AGENTS.md)，包含可重複執行的 clone/pull、host 依賴安裝、Agent 專用的 Docker-only 啟動規則、OpenCode / Claude Code / Claude Desktop 的 MCP 註冊、Skill 安裝、驗證與安全規則。
+完整的 Agent 操作說明在 [`AGENTS.md`](AGENTS.md)，包含可重複執行的 clone/pull、host 依賴安裝、Agent 專用的容器啟動規則、OpenCode / Claude Code / Claude Desktop 的 MCP 註冊、Skill 安裝、驗證與安全規則。
 
 ---
 
@@ -61,14 +61,20 @@ uvicorn app.main:app --reload --port 8000
 
 若把 `semgrep` 裝在虛擬環境內，請確認啟動服務時 PATH 找得到它（先啟用虛擬環境即可）。
 
-### Docker（建議）
+### Docker / Podman（建議）
 
-macOS / Windows 可用 Docker Desktop，Linux 用 Docker Engine 搭配 Compose plugin。服務網址一律是 `http://127.0.0.1:8000`。
+macOS / Windows 可用 Docker Desktop，Linux 用 Docker Engine 搭配 Compose plugin。Podman 搭配 `podman-compose`（或已設定的 `podman compose` provider）也可以。服務網址一律是 `http://127.0.0.1:8000`。
 
-最快的跨平台方式是 Python bootstrap 腳本。它會用 Docker Compose（不會用 systemd）啟動服務、等待 `/health`，並安裝 triage skill：
+最快的跨平台方式是 Python bootstrap 腳本。它會偵測 Docker 或 Podman（優先 Docker），用 Compose（不會用 systemd）啟動服務、等待 `/health`，並安裝 triage skill：
 
 ```bash
 python3 scripts/agent_setup.py --wait-timeout 180
+```
+
+兩種 runtime 都裝時，強制使用 Podman：
+
+```bash
+python3 scripts/agent_setup.py --runtime podman --wait-timeout 180
 ```
 
 Windows PowerShell：
@@ -83,7 +89,7 @@ py -3 scripts/agent_setup.py --wait-timeout 180
 python3 scripts/agent_setup.py --check
 ```
 
-也可以自己操作 Docker Compose：
+也可以自己操作 Compose：
 
 ```bash
 docker compose up -d --build
@@ -92,18 +98,18 @@ docker compose logs -f        # 追蹤日誌，Ctrl+C 離開
 docker compose down           # 停止並移除容器，data/ 仍保留
 ```
 
-Unix 上同樣有 `make docker-up`、`make docker-status`、`make docker-logs`、`make docker-down`；Windows 沒有 `make` 指令。
+用 Podman 時把 `docker compose` 換成 `podman compose`（或 `podman-compose`）。Unix 上 Docker 指令同樣有 `make docker-up`、`make docker-status`、`make docker-logs`、`make docker-down`；Windows 沒有 `make` 指令。
 
-Docker 是預設的部署方式：
+容器 runtime 是預設的部署方式：
 
 - 容器 `sast` 只綁定 `127.0.0.1:8000`，不對外開放。
-- `restart: unless-stopped` 搭配已啟用的 `docker.service`，開機後會自動啟動；當掉也會自動重啟。
+- `restart: unless-stopped` 搭配已啟用的 `docker.service`（或等效的 Podman 設定），開機後會自動啟動；當掉也會自動重啟。
 - `./data` 直接掛載到容器 `/data`，SQLite 與掃描工作區沿用專案內既有資料。
 - `.env` 內的 `SAST_API_KEY` 等設定會由 Compose 帶入容器。
 - 映像預設安裝 Semgrep。不需要時：
 
   ```bash
-  docker build --build-arg INSTALL_SEMGREP=false -t sast-service .
+  docker build --build-arg INSTALL_SEMGREP=false -t sast-service .   # 或 podman build ...
   ```
 
 服務使用程序內背景佇列，因此 uvicorn 必須維持 **單一 worker**（Dockerfile 已固定 `--workers 1`）。
@@ -128,9 +134,9 @@ make service-uninstall # 移除 service，保留 data/
 
 安裝腳本會依目前專案路徑產生 `~/.config/systemd/user/sast.service`、嘗試 `loginctl enable-linger`，並只綁定 `127.0.0.1:8000`。它會讀取專案根目錄的 `.env`（若存在）。
 
-systemd 與 Docker 兩種方式**擇一使用**；安裝後不要再手動 `make run`。
+systemd 與容器 runtime（Docker/Podman）兩種方式**擇一使用**；安裝後不要再手動 `make run`。
 
-> Agent 自動安裝的規則更嚴格：Agent 必須使用 Docker，**不得**安裝 systemd 服務。若沒有 Docker，應停下來請你先安裝 Docker。詳見 [`AGENTS.md`](AGENTS.md)。
+> Agent 自動安裝的規則更嚴格：Agent 必須使用 Docker 或 Podman，**不得**安裝 systemd 服務。若兩者都沒有，應停下來請你先安裝 Docker 或 Podman。詳見 [`AGENTS.md`](AGENTS.md)。
 
 ---
 

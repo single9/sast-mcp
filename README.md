@@ -15,16 +15,16 @@ Set up the SAST MCP service from https://github.com/single9/sast-mcp.git.
 
 1. Clone it to ~/Development/sast, or pull if it already exists.
 2. Read AGENTS.md in the repository and follow its "One-shot setup" section.
-3. Use Docker if Docker and Docker Compose are available. If Docker is not available,
+3. Use Docker or Podman with Compose if available. If neither is available,
    do not install or start the systemd service and do not start any other persistent
-   service; stop and tell me Docker is required.
+   service; stop and tell me Docker or Podman is required.
 4. Register the `sast` MCP server globally for my client, install the `sast-triage`
    skill, and verify with /health and the client's MCP list.
 5. Do not overwrite existing configuration; merge the `sast` entry.
 6. Report the repository path, service URL, MCP registration status, and skill path.
 ```
 
-The full agent-facing instructions are in [`AGENTS.md`](AGENTS.md). They cover idempotent clone/pull, host dependencies, Docker-only service startup for agents, MCP registration for OpenCode / Claude Code / Claude Desktop, skill installation, verification, and safety rules.
+The full agent-facing instructions are in [`AGENTS.md`](AGENTS.md). They cover idempotent clone/pull, host dependencies, container-only service startup for agents, MCP registration for OpenCode / Claude Code / Claude Desktop, skill installation, verification, and safety rules.
 
 ---
 
@@ -62,14 +62,20 @@ Open <http://localhost:8000> for the Web UI and <http://localhost:8000/docs> for
 
 If you install `semgrep` inside the virtual environment, make sure it is on `PATH` when the service starts (activating the virtual environment is enough).
 
-### Docker (recommended)
+### Docker / Podman (recommended)
 
-Docker Desktop works on macOS and Windows; Docker Engine with the Compose plugin works on Linux. The service URL is always `http://127.0.0.1:8000`.
+Docker Desktop works on macOS and Windows; Docker Engine with the Compose plugin works on Linux. Podman with `podman-compose` (or a configured `podman compose` provider) also works. The service URL is always `http://127.0.0.1:8000`.
 
-The quickest cross-platform path is the Python bootstrap script. It starts the service with Docker Compose (never systemd), waits for `/health`, and installs the triage skill:
+The quickest cross-platform path is the Python bootstrap script. It detects Docker or Podman (Docker first), starts the service with Compose (never systemd), waits for `/health`, and installs the triage skill:
 
 ```bash
 python3 scripts/agent_setup.py --wait-timeout 180
+```
+
+Force Podman when both runtimes are installed:
+
+```bash
+python3 scripts/agent_setup.py --runtime podman --wait-timeout 180
 ```
 
 Windows PowerShell:
@@ -84,7 +90,7 @@ To verify an existing installation without changing anything:
 python3 scripts/agent_setup.py --check
 ```
 
-Or drive Docker Compose yourself:
+Or drive Compose yourself:
 
 ```bash
 docker compose up -d --build
@@ -93,18 +99,18 @@ docker compose logs -f        # follow logs; Ctrl+C to exit
 docker compose down           # stop and remove the container; data/ is preserved
 ```
 
-On Unix, the same commands are available as `make docker-up`, `make docker-status`, `make docker-logs`, and `make docker-down`; `make` targets are not available on Windows.
+With Podman, replace `docker compose` with `podman compose` (or `podman-compose`). On Unix, the Docker commands are also available as `make docker-up`, `make docker-status`, `make docker-logs`, and `make docker-down`; `make` targets are not available on Windows.
 
-Docker is the default deployment method:
+A container runtime is the default deployment method:
 
 - The `sast` container binds only to `127.0.0.1:8000` and is not exposed externally.
-- `restart: unless-stopped`, together with an enabled `docker.service`, starts the container on boot and restarts it after crashes.
+- `restart: unless-stopped`, together with an enabled `docker.service` (or an equivalent Podman setup), starts the container on boot and restarts it after crashes.
 - `./data` is mounted directly at `/data` in the container, so SQLite and scan workspaces reuse existing project data.
 - Settings such as `SAST_API_KEY` in `.env` are passed into the container by Compose.
 - The image installs Semgrep by default. To skip it:
 
   ```bash
-  docker build --build-arg INSTALL_SEMGREP=false -t sast-service .
+  docker build --build-arg INSTALL_SEMGREP=false -t sast-service .   # or: podman build ...
   ```
 
 The service uses an in-process background queue, so uvicorn must stay at **one worker** (the Dockerfile already pins `--workers 1`).
@@ -129,9 +135,9 @@ make service-uninstall # remove the service; data/ is preserved
 
 The install script generates `~/.config/systemd/user/sast.service` from the current project path, tries `loginctl enable-linger`, and binds only to `127.0.0.1:8000`. It reads `.env` from the project root if present.
 
-Use **either** systemd or Docker, not both. After installation, do not run `make run` manually.
+Use **either** systemd or a container runtime (Docker/Podman), not both. After installation, do not run `make run` manually.
 
-> Agent-driven setup is stricter: an agent must use Docker and must **not** install the systemd service. If Docker is unavailable, it should stop and ask you to install Docker instead. See [`AGENTS.md`](AGENTS.md).
+> Agent-driven setup is stricter: an agent must use Docker or Podman and must **not** install the systemd service. If neither is available, it should stop and ask you to install Docker or Podman instead. See [`AGENTS.md`](AGENTS.md).
 
 ---
 

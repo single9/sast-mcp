@@ -2,6 +2,7 @@ VENV := .venv
 PY := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 SKILLS_DIR ?=
+RUNTIME ?= auto
 
 .PHONY: install semgrep mcp run mcp-run install-skill agent-setup test format docker-up docker-down docker-status docker-logs service-install service-status service-logs service-restart service-uninstall
 
@@ -22,9 +23,10 @@ run:
 mcp-run:
 	$(PY) -m sast_mcp.server
 
-# 跨平台安裝：Docker 啟動服務 + 安裝 skill + 印出 MCP 註冊指令
+# 跨平台安裝：Docker/Podman 啟動服務 + 安裝 skill + 印出 MCP 註冊指令
+# 用 RUNTIME=podman 可強制 Podman
 agent-setup:
-	$(PY) scripts/agent_setup.py
+	$(PY) scripts/agent_setup.py --runtime $(RUNTIME)
 
 # 把 triage skill 安裝到 OpenCode 全域 skills 目錄（可用 SKILLS_DIR 覆寫）
 install-skill:
