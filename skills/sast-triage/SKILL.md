@@ -1,5 +1,5 @@
 ---
-name: SAST Triage
+name: sast-triage
 description: Use the local SAST MCP server to scan a repository, triage Semgrep findings against real source code, classify true/false positives, propose minimal fixes, and re-scan. Use when asked to run SAST, do a security scan, review security findings, or harden code quality.
 ---
 
@@ -19,14 +19,16 @@ description: Use the local SAST MCP server to scan a repository, triage Semgrep 
 1. SAST 服務必須在跑。先呼叫 `health`。
 2. 若 `reachable=false`，請使用者啟動服務：
    - `cd <sast-repo> && make run`
-   - 或 `docker compose up -d`
+   - 或 `docker compose up -d` / `podman compose up -d`
    - 再確認 `SAST_BASE_URL`（預設 `http://127.0.0.1:8000`）。
 3. 若 `health.engines` 顯示 `builtin-regex` 為 active，代表 Semgrep 不可用；提醒使用者誤報率會上升。
 4. 若 API 回 401，代表服務設定了 `SAST_API_KEY`，MCP server 也必須帶同一組。
 
 ## 工具呼叫方式
 
-在 OpenCode Code Mode 中，MCP server `sast` 的工具位於 `tools.sast`：
+這個 Skill 使用 Agent Skills 開放格式，OpenCode、Claude Code 等支援 `SKILL.md` 的客戶端都能載入。
+
+以下範例以 OpenCode Code Mode 的 `tools.sast` 表示：
 
 ```js
 const h = await tools.sast.health({});
@@ -40,7 +42,7 @@ const findings = await tools.sast.get_findings({
 });
 ```
 
-在其他 MCP 客戶端（Claude Desktop 等）直接呼叫 `health`、`scan_path`、`get_findings` 等工具名稱。
+在其他 MCP 客戶端（Claude Code、Claude Desktop 等）直接呼叫 `health`、`scan_path`、`get_findings` 等工具名稱；下面的工作流程與工具參數相同。
 
 | 目的 | 工具 |
 | --- | --- |

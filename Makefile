@@ -2,6 +2,7 @@ VENV := .venv
 PY := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 SKILLS_DIR ?=
+SKILL_TARGET ?= auto
 RUNTIME ?= auto
 
 .PHONY: install semgrep mcp run mcp-run install-skill agent-setup test format docker-up docker-down docker-status docker-logs service-install service-status service-logs service-restart service-uninstall
@@ -28,9 +29,10 @@ mcp-run:
 agent-setup:
 	$(PY) scripts/agent_setup.py --runtime $(RUNTIME)
 
-# 把 triage skill 安裝到 OpenCode 全域 skills 目錄（可用 SKILLS_DIR 覆寫）
+# 把 triage skill 安裝到偵測到的 Agent 客戶端（SKILL_TARGET=all/claude/opencode/agents）
+# 也可用 SKILLS_DIR 指定單一目錄
 install-skill:
-	$(PY) scripts/install_skill.py $(if $(SKILLS_DIR),--skills-dir "$(SKILLS_DIR)",)
+	$(PY) scripts/install_skill.py --target $(SKILL_TARGET) $(if $(SKILLS_DIR),--skills-dir "$(SKILLS_DIR)",)
 
 test:
 	$(VENV)/bin/pytest -q

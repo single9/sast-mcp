@@ -449,17 +449,32 @@ Claude Desktop 沒有 CLI，直接改設定檔（沒有 `mcpServers` 鍵就自�
 
 ### 安裝 triage Skill
 
+這個 Skill 採用 [Agent Skills](https://agentskills.io) 開放格式，同一份 `skills/sast-triage/` 可給 OpenCode、Claude Code 與其他支援 `SKILL.md` 的客戶端使用。
+
 ```bash
-python3 scripts/install_skill.py
+python3 scripts/install_skill.py                 # 自動偵測已安裝的客戶端
+python3 scripts/install_skill.py --target claude # 指定單一客戶端
+python3 scripts/install_skill.py --target all    # opencode + claude + agents
+python3 scripts/install_skill.py --skills-dir /path/to/skills
 ```
 
 Windows PowerShell：
 
 ```powershell
 py -3 scripts/install_skill.py
+py -3 scripts/install_skill.py --target claude
+py -3 scripts/install_skill.py --skills-dir C:\path\to\skills
 ```
 
-這會把 `.opencode/skills/sast-triage/` 複製到 `~/.config/opencode/skills/`（或 `$XDG_CONFIG_HOME/opencode/skills/`）。要裝到其他位置，加上 `--skills-dir /path/to/skills`。Unix 上 `make install-skill` 與 `make install-skill SKILLS_DIR=/path/to/skills` 效果相同。Skill 定義判讀流程（如何驗證、分類、修補、重掃），MCP 工具只提供動作。
+預設安裝位置：
+
+| Target | 目錄 |
+| --- | --- |
+| `opencode` | `$XDG_CONFIG_HOME/opencode/skills` 或 `~/.config/opencode/skills` |
+| `claude` | `~/.claude/skills` |
+| `agents` | `~/.agents/skills` |
+
+`auto` 會裝到每個偵測到的客戶端；都沒偵測到時退回 `~/.agents/skills`。若某個客戶端支援 `SKILL.md` 但沒被偵測到，可用 `--target agents` 或 `--skills-dir`。Unix 上 `make install-skill` 與 `make install-skill SKILLS_DIR=/path/to/skills` 效果相同。Skill 定義判讀流程（如何驗證、分類、修補、重掃），MCP 工具只提供動作。
 
 ### 驗證安裝
 
@@ -564,7 +579,7 @@ await tools.sast.triage_findings({
 | `export_sarif` | 寫出 SARIF，回傳路徑與統計 |
 | `delete_scan` | 刪除掃描與工作區（需 `confirm=true`） |
 
-Agent 判讀流程與限制請看 `.opencode/skills/sast-triage/SKILL.md`。
+Agent 判讀流程與限制請看 `skills/sast-triage/SKILL.md`。
 
 ### MCP 安全設定
 
@@ -734,8 +749,8 @@ scripts/
   install_skill.py   跨平台 triage Skill 安裝器
   install-service.sh
   uninstall-service.sh
-.opencode/skills/
-  sast-triage/       Agent 判讀與修補流程
+skills/
+  sast-triage/       可攜式 Agent Skill（SKILL.md）
 tests/
 examples/vulnerable_app.py
 ```

@@ -450,17 +450,32 @@ Place it under the client's server map with the key name `sast`, save, and resta
 
 ### Install the triage skill
 
+The skill follows the [Agent Skills](https://agentskills.io) open format, so the same `skills/sast-triage/` directory works with OpenCode, Claude Code, and other compatible clients.
+
 ```bash
-python3 scripts/install_skill.py
+python3 scripts/install_skill.py                 # auto-detect installed clients
+python3 scripts/install_skill.py --target claude # one client
+python3 scripts/install_skill.py --target all    # opencode + claude + agents
+python3 scripts/install_skill.py --skills-dir /path/to/skills
 ```
 
 Windows PowerShell:
 
 ```powershell
 py -3 scripts/install_skill.py
+py -3 scripts/install_skill.py --target claude
+py -3 scripts/install_skill.py --skills-dir C:\path\to\skills
 ```
 
-This copies `.opencode/skills/sast-triage/` to `~/.config/opencode/skills/` (or `$XDG_CONFIG_HOME/opencode/skills/`). To install it somewhere else, pass `--skills-dir /path/to/skills`. On Unix, `make install-skill` and `make install-skill SKILLS_DIR=/path/to/skills` are equivalent. The skill defines the triage workflow (how to verify, classify, fix, and rescan); the MCP tools only provide actions.
+Default destinations:
+
+| Target | Directory |
+| --- | --- |
+| `opencode` | `$XDG_CONFIG_HOME/opencode/skills` or `~/.config/opencode/skills` |
+| `claude` | `~/.claude/skills` |
+| `agents` | `~/.agents/skills` |
+
+`auto` installs into every detected client and falls back to `~/.agents/skills` when none is detected. If a client supports `SKILL.md` but is not detected, use `--target agents` or `--skills-dir`. On Unix, `make install-skill` and `make install-skill SKILLS_DIR=/path/to/skills` are equivalent. The skill defines the triage workflow (how to verify, classify, fix, and rescan); the MCP tools only provide actions.
 
 ### Verify the installation
 
@@ -565,7 +580,7 @@ You have a sast MCP server available. Follow this workflow:
 | `export_sarif` | Write SARIF and return the path and stats |
 | `delete_scan` | Delete a scan and its workspace (requires `confirm=true`) |
 
-See `.opencode/skills/sast-triage/SKILL.md` for the agent triage workflow and limitations.
+See `skills/sast-triage/SKILL.md` for the agent triage workflow and limitations.
 
 ### MCP security settings
 
@@ -735,8 +750,8 @@ scripts/
   install_skill.py   Cross-platform triage skill installer
   install-service.sh
   uninstall-service.sh
-.opencode/skills/
-  sast-triage/       Agent triage and remediation workflow
+skills/
+  sast-triage/       Portable Agent Skill (SKILL.md)
 tests/
 examples/vulnerable_app.py
 ```

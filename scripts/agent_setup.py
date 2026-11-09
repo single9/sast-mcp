@@ -23,7 +23,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-from install_skill import default_skills_dir, install_skill
+from install_skill import CLIENTS, default_skills_dir, install_skill, resolve_targets
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8000"
 
@@ -211,10 +211,17 @@ def main() -> int:
     parser.add_argument("--skip-service", action="store_true", help="do not start or check the container service")
     parser.add_argument("--skip-skill", action="store_true", help="do not install the triage skill")
     parser.add_argument(
+        "--skill-target",
+        action="append",
+        choices=(*CLIENTS, "auto", "all"),
+        default=None,
+        help="client to install the skill for; repeatable (default: auto-detect)",
+    )
+    parser.add_argument(
         "--skills-dir",
         type=Path,
         default=None,
-        help="OpenCode skills directory (default: OPENCODE_SKILLS_DIR or the global config dir)",
+        help="custom skills directory (overrides --skill-target)",
     )
     parser.add_argument(
         "--register-opencode",
@@ -234,9 +241,14 @@ def main() -> int:
 
     if args.check:
         wait_for_health(args.base_url, max(1, min(args.wait_timeout, 15)))
-        skill_path = (args.skills_dir or default_skills_dir()).expanduser().resolve() / "sast-triage" / "SKILL.md"
-        print(f"Skill: {skill_path} ({'ok' if skill_path.exists() else 'missing'})")
-        return 0 if skill_path.exists() else 1
+        if args.skills_dir is not None:
+            roots = [args.skills_dir]
+        else:
+            roots = [default_skills_dir(client) for client in resolve_targets(args.skill_target)]
+        skill_paths = [root.expanduser().resolve() / "sast-triage" / "SKILL.md" for root in roots]
+        for skill_path in skill_paths:
+            print(f"Skill: {skill_path} ({'ok' if skill_path.exists() else 'missing'})")
+        return 0 if skill_paths and all(path.exists() for path in skill_paths) else 1
 
     if not args.skip_service:
         compose, runtime = container_compose_command(args.runtime)
@@ -250,8 +262,9 @@ def main() -> int:
         print(f"Service healthy: {health.get('status', 'unknown')} / {health.get('engine', 'unknown')}")
 
     if not args.skip_skill:
-        destination = install_skill(repo_dir, args.skills_dir)
-        print(f"Skill installed: {destination}")
+        destinations = install_skill(repo_dir, args.skills_dir, args.skill_target)
+        for destination in destinations:
+            print(f"Skill installed: {destination}")
 
     python_path = venv_python(repo_dir)
     print(f"MCP python: {python_path}")

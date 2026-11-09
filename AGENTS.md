@@ -24,6 +24,9 @@ Python scripts in `scripts/`; they work on Linux, macOS, and Windows without
 - `scripts/agent_setup.py` detects Docker Compose v2 (`docker compose`), legacy
   `docker-compose`, `podman compose`, and `podman-compose`. Docker is preferred
   in `auto` mode; force Podman with `--runtime podman`.
+- The triage skill is a portable Agent Skill (`skills/sast-triage/SKILL.md`), not
+  OpenCode-specific. `scripts/install_skill.py` installs it for OpenCode, Claude
+  Code, or any client that reads `SKILL.md`.
 
 ## One-shot setup
 
@@ -209,12 +212,17 @@ Fully quit and reopen Claude Desktop after saving.
 
 ### 6. Install the triage skill
 
-The setup script in step 4 installs the skill automatically. To reinstall it or choose a
-different directory:
+The skill uses the Agent Skills open format (`skills/sast-triage/SKILL.md`), so the same
+files work with OpenCode, Claude Code, and other compatible clients. The setup script in
+step 4 installs it automatically into every detected client.
+
+To reinstall it, choose clients explicitly, or use a custom directory:
 
 ```bash
 cd "$REPO_DIR"
-python3 scripts/install_skill.py
+python3 scripts/install_skill.py                     # auto-detect clients
+python3 scripts/install_skill.py --target claude     # one client
+python3 scripts/install_skill.py --target all        # opencode + claude + agents
 python3 scripts/install_skill.py --skills-dir /path/to/skills
 ```
 
@@ -223,15 +231,21 @@ Windows PowerShell:
 ```powershell
 cd $REPO_DIR
 py -3 scripts/install_skill.py
+py -3 scripts/install_skill.py --target claude
 py -3 scripts/install_skill.py --skills-dir C:\path\to\skills
 ```
 
-This copies `.opencode/skills/sast-triage/` to `~/.config/opencode/skills/sast-triage/`
-by default (or `$XDG_CONFIG_HOME/opencode/skills/`). `make install-skill` remains
-available on Unix.
+Default destinations:
 
-Other clients: keep the skill file in the repository and reference it explicitly, or copy
-it into the client's skills directory if the client supports one.
+| Target | Directory |
+| --- | --- |
+| `opencode` | `$XDG_CONFIG_HOME/opencode/skills` or `~/.config/opencode/skills` |
+| `claude` | `~/.claude/skills` |
+| `agents` | `~/.agents/skills` |
+
+`auto` installs into every detected client and falls back to `~/.agents/skills` when none
+is detected. `make install-skill` remains available on Unix. If a client supports
+`SKILL.md` but is not detected, use `--target agents` or `--skills-dir`.
 
 ### 7. Verify
 
@@ -239,7 +253,6 @@ it into the client's skills directory if the client supports one.
 python3 scripts/agent_setup.py --check
 opencode mcp list | grep sast
 "$REPO_DIR/.venv/bin/python" -c "import sast_mcp.server; print('mcp import ok')"
-test -f "$HOME/.config/opencode/skills/sast-triage/SKILL.md" && echo "skill ok"
 ```
 
 Windows PowerShell:
@@ -248,7 +261,6 @@ Windows PowerShell:
 py -3 scripts/agent_setup.py --check
 opencode mcp list | Select-String sast
 & "$REPO_DIR\.venv\Scripts\python.exe" -c "import sast_mcp.server; print('mcp import ok')"
-Test-Path "$HOME\.config\opencode\skills\sast-triage\SKILL.md"
 ```
 
 Then ask the agent client to call the `health` tool. A response such as
@@ -261,7 +273,7 @@ Report these values to the user:
 - repository path
 - service URL and container status
 - MCP client and registration status
-- skill installation path
+- skill installation paths
 - any warnings, skipped steps, or missing prerequisites
 
 ## Using the SAST tools
